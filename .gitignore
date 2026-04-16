@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+fixtures/synthetic.sqlite
+*.db
+dist/
+.pytest_cache/
+.coverage
+htmlcov/

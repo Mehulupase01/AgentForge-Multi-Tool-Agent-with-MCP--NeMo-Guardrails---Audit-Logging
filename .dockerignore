@@ -1,0 +1,13 @@
+.git
+.venv
+__pycache__
+*.pyc
+.pytest_cache
+.coverage
+htmlcov
+local.db
+apps/api/local.db
+BLUEPRINT.md
+BLUEPRINT.pdf
+phase1-uvicorn.out.log
+phase1-uvicorn.err.log
