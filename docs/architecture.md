@@ -36,3 +36,14 @@ Phase 1 establishes the workspace, API package, configuration model, logging, he
 ## Phase 2 Scope
 
 Phase 2 establishes the audit logging core, session APIs, shared response envelopes, and the tamper-evident hash chain that later orchestration, guardrails, approvals, and red-team phases will build on.
+
+## Corpus And Fixture Layer
+
+- `corpus_documents` stores metadata for the generated markdown corpus at repo-root `fixtures/corpus/`.
+- The corpus generator produces 53 deterministic AI/ML reference documents plus a tracked `README.md`; the ingest path intentionally excludes the README so API and database counts stay at 53.
+- `fixtures/synthetic.sqlite` is a generated SQLite database with `employees`, `projects`, and `project_assignments`, kept separate from the control-plane database for future MCP-side read-only querying.
+- The `agentforge` Click CLI currently exposes `seed-synthetic` and `ingest-corpus`, and the standalone generator module can be run with `python -m agentforge.tools.generate_corpus`.
+
+## Phase 3 Scope
+
+Phase 3 establishes the deterministic corpus generator, corpus ingestion and listing APIs, the generated synthetic SQLite dataset, and the operator CLI entrypoints that future MCP sidecars depend on.

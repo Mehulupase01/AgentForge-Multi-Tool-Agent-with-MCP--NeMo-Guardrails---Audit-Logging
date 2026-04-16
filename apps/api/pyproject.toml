@@ -38,6 +38,7 @@ dependencies = [
 
 [project.scripts]
 agentforge-api = "agentforge.main:main"
+agentforge = "agentforge.tools.cli:main"
 
 [dependency-groups]
 test = [

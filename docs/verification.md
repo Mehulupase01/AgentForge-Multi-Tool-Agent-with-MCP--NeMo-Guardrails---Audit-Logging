@@ -39,3 +39,24 @@
   Result: passed. Returned `{"id":"d76d0ba3-cc2a-45cc-9303-410f49cbbb96","user_id":"demo_user","status":"active","started_at":"2026-04-16T17:42:57.681222","ended_at":null,"metadata":{},"task_count":0,"tool_call_count":0,"approval_count":0}` against a fresh migrated SQLite database.
 - `curl -H "X-API-Key: dev-key" http://localhost:8011/api/v1/audit/integrity`
   Result: passed. Returned `{"verified":true,"events_checked":1,"first_broken_sequence":null,"expected_chain_hash":null,"actual_chain_hash":null}` immediately after the fresh session creation.
+
+## 2026-04-16 - Phase 3 Synthetic Data And Corpus
+
+- `uv run --directory apps/api python -m agentforge.tools.generate_corpus`
+  Result: passed. Generated 53 deterministic corpus documents plus `fixtures/corpus/README.md` under the repo-root fixture directory.
+- `uv run --directory apps/api agentforge seed-synthetic --output fixtures/synthetic.sqlite`
+  Result: passed. Created the generated SQLite fixture database with `employees=200`, `projects=30`, and `assignments=600`.
+- `uv run --directory apps/api alembic upgrade head`
+  Result: passed. The SQLite dev database upgraded cleanly through `006_corpus`.
+- `uv run --directory apps/api agentforge ingest-corpus`
+  Result: passed. Indexed 53 corpus documents into `corpus_documents`.
+- `uv run --directory apps/api pytest tests/test_corpus.py -v`
+  Result: passed. `5/5` tests green, covering synthetic DB creation, deterministic corpus generation, idempotent reindex, change detection, and paginated document listing.
+- `python -m sqlite3 fixtures/synthetic.sqlite "SELECT COUNT(*) FROM employees;"`
+  Result: passed on this Windows host as the local equivalent of the missing standalone `sqlite3` shell. Returned `(200,)`.
+- `python -m sqlite3 fixtures/synthetic.sqlite "SELECT COUNT(*) FROM projects;"`
+  Result: passed on this Windows host as the local equivalent of the missing standalone `sqlite3` shell. Returned `(30,)`.
+- `curl -H "X-API-Key: dev-key" -X POST http://localhost:8012/api/v1/corpus/reindex`
+  Result: passed. Returned `{"indexed":0,"skipped_unchanged":53,"duration_ms":288}` against the already-generated corpus.
+- `curl -H "X-API-Key: dev-key" http://localhost:8012/api/v1/corpus/documents?page=1&per_page=5`
+  Result: passed. Returned a paginated envelope with `meta.total=53` and the first 5 corpus documents. Local host verification used port `8012` because port `8000` is occupied by an unrelated local service on this machine.

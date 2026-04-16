@@ -15,6 +15,7 @@ from agentforge.config import settings
 from agentforge.database import dispose_engine, init_engine
 from agentforge.logging_setup import configure_logging
 from agentforge.routers.audit import router as audit_router
+from agentforge.routers.corpus import router as corpus_router
 from agentforge.routers.health import router as health_router
 from agentforge.routers.sessions import router as sessions_router
 
@@ -120,6 +121,7 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     app.include_router(sessions_router, dependencies=[Depends(require_api_key)])
     app.include_router(audit_router, dependencies=[Depends(require_api_key)])
+    app.include_router(corpus_router, dependencies=[Depends(require_api_key)])
 
     return app
 

@@ -23,3 +23,11 @@
 - `audit_events` remains append-only in application code. The code paths added in `agentforge.services.audit_service`, `agentforge.routers.sessions`, and `agentforge.routers.audit` only insert or read audit rows; direct `UPDATE` and `DELETE` operations exist only in test-only tamper simulations.
 - The blueprint numbering gap is preserved intentionally: Phase 2 creates `001_foundation` and `004_audit_events`, while `002`, `003`, `005`, and `006` remain reserved for their future owning phases instead of introducing empty placeholder migrations.
 - The documented demo key is normalized to `dev-key` so the blueprint's curl verification commands work without undocumented local overrides.
+
+## Phase 3 Review Checklist
+
+- No phase-level architectural changes were introduced; the implementation follows the blueprint's corpus metadata model, separate synthetic SQLite tool database, and CLI entrypoint requirements.
+- `fixtures/synthetic.sqlite` remains separate from the control-plane database per decision `D-007`, so future `sqlite_query` MCP work can operate on an isolated read-only data plane.
+- `corpus_service.reindex()` parses YAML frontmatter, excludes `README.md`, hashes full file content, counts tokens using whitespace split, and upserts on `filename`, which keeps the corpus row count aligned with the 53 generated fixture documents.
+- The migration numbering gap remains explicit: `006_corpus.py` depends on `004_audit_events`, while `002`, `003`, and `005` stay reserved for their owning phases rather than placeholder migrations.
+- The standalone Windows `sqlite3` shell is absent on this host, so local verification used `python -m sqlite3` to prove the generated row counts without changing the project stack.
