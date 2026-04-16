@@ -26,3 +26,16 @@
   Result: passed under Docker. Returned readiness `200` with database `ok`.
 - `docker compose down`
   Result: passed. Stack shut down cleanly.
+
+## 2026-04-16 - Phase 2 Audit Logging Core
+
+- `uv run --directory apps/api alembic upgrade head`
+  Result: passed. The SQLite dev database upgraded cleanly through `001_foundation` and `004_audit_events`.
+- `uv run --directory apps/api pytest tests/test_sessions.py tests/test_audit.py tests/test_audit_chain.py -v`
+  Result: passed. `6/6` tests green, including tamper detection, deletion detection, and 100-coroutine concurrent write verification.
+- `uv run --directory apps/api uvicorn agentforge.main:app --host 0.0.0.0 --port 8000 --app-dir src`
+  Result: host port `8000` was still occupied by an unrelated local service, so direct host verification was executed on `8011` instead.
+- `curl -H "X-API-Key: dev-key" -X POST http://localhost:8011/api/v1/sessions -H "Content-Type: application/json" -d "{}"`
+  Result: passed. Returned `{"id":"d76d0ba3-cc2a-45cc-9303-410f49cbbb96","user_id":"demo_user","status":"active","started_at":"2026-04-16T17:42:57.681222","ended_at":null,"metadata":{},"task_count":0,"tool_call_count":0,"approval_count":0}` against a fresh migrated SQLite database.
+- `curl -H "X-API-Key: dev-key" http://localhost:8011/api/v1/audit/integrity`
+  Result: passed. Returned `{"verified":true,"events_checked":1,"first_broken_sequence":null,"expected_chain_hash":null,"actual_chain_hash":null}` immediately after the fresh session creation.

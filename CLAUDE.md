@@ -22,11 +22,23 @@ docker compose ps
 docker compose down
 ```
 
+### Phase 2 verified
+
+```powershell
+uv run --directory apps/api alembic upgrade head
+uv run --directory apps/api pytest tests/test_sessions.py tests/test_audit.py tests/test_audit_chain.py -v
+uv run --directory apps/api uvicorn agentforge.main:app --host 0.0.0.0 --port 8000 --app-dir src
+curl -H "X-API-Key: dev-key" -X POST http://localhost:8000/api/v1/sessions -H "Content-Type: application/json" -d "{}"
+curl -H "X-API-Key: dev-key" http://localhost:8000/api/v1/audit/integrity
+```
+
 ### Verification Notes
 
 - Host verification used Python `3.12.10` provisioned by `uv`, matching the blueprint's Python 3.12 runtime requirement despite the machine also having Python 3.13 installed.
 - Local direct `uvicorn` verification was executed on port `8010` because port `8000` was already occupied by an unrelated local FastAPI service on this machine.
 - Container verification succeeded on the documented port mapping `8000:8000`.
+- Phase 2 local host verification was executed on port `8011` for the same reason: host port `8000` is still occupied by an unrelated local FastAPI service on this machine.
+- The documented demo API key is `dev-key`, and both `Settings.api_key` and `.env.example` now match the blueprint so the curl commands work as written.
 
 ## Active Decisions
 
@@ -39,12 +51,13 @@ docker compose down
 - Auth: X-API-Key header, single-user demo
 - DB: PostgreSQL 16 prod, SQLite in-memory tests
 - Red-team threshold: >= 96% to pass CI; target 98%
+- Audit chain writes are serialized with `pg_advisory_xact_lock(99)` on PostgreSQL and an async process-local lock in SQLite-backed tests to keep `sequence` monotonic under concurrent writes.
 
 ## Current Execution Truth
 
 - Blueprint: complete (local-only, untracked by user preference)
 - Phase 1 (Foundation): complete and verified
-- Phase 2 (Audit Logging Core): not started
+- Phase 2 (Audit Logging Core): complete and verified
 - Phase 3 (Synthetic Data & Corpus): not started
 - Phase 4 (MCP Tool Servers): not started
 - Phase 5 (Agent Orchestrator): not started

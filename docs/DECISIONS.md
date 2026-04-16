@@ -15,3 +15,11 @@
 - Runtime remains pinned to Python 3.12 in project metadata even though the host machine also has Python 3.13 installed.
 - The Docker builder uses the repo-root workspace `uv.lock` plus `build-essential` so the pinned dependency graph can build reproducibly inside Linux containers.
 - `numpy==1.26.4` is pinned explicitly to keep the `spacy 3.7.6` and `thinc` binary stack stable during container builds.
+
+## Phase 2 Review Checklist
+
+- No phase-level architectural changes were introduced; the implementation follows the blueprint's session/task/task_step/audit domain shape and public API surface.
+- Audit chain serialization follows the blueprint decision exactly: `pg_advisory_xact_lock(99)` on PostgreSQL, with SQLite test serialization handled in-process so `test_audit_concurrent_writes` stays deterministic.
+- `audit_events` remains append-only in application code. The code paths added in `agentforge.services.audit_service`, `agentforge.routers.sessions`, and `agentforge.routers.audit` only insert or read audit rows; direct `UPDATE` and `DELETE` operations exist only in test-only tamper simulations.
+- The blueprint numbering gap is preserved intentionally: Phase 2 creates `001_foundation` and `004_audit_events`, while `002`, `003`, `005`, and `006` remain reserved for their future owning phases instead of introducing empty placeholder migrations.
+- The documented demo key is normalized to `dev-key` so the blueprint's curl verification commands work without undocumented local overrides.

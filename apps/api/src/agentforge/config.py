@@ -6,7 +6,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     database_url: str = "sqlite+aiosqlite:///./local.db"
-    api_key: str = "dev-key-change-me"
+    api_key: str = "dev-key"
     secret_key: str = ""
     api_port: int = Field(default=8000, ge=1, le=65535)
     debug: bool = False
@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     orchestrator_checkpoint_path: str = "runtime/orchestrator_checkpoints.sqlite"
 
     agentforge_api_url: str = "http://api:8000"
-    agentforge_api_key: str = "dev-key-change-me"
+    agentforge_api_key: str = "dev-key"
     redteam_threshold_pct: float = 96.0
 
     model_config = SettingsConfigDict(
