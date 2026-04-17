@@ -7,6 +7,16 @@ from agentforge.main import create_app
 from agentforge.services.mcp_client_pool import get_mcp_client_pool
 
 
+class HealthyPool:
+    async def connect_all(self):
+        return {
+            "file_search": type("Info", (), {"status": "ok"})(),
+            "web_fetch": type("Info", (), {"status": "ok"})(),
+            "sqlite_query": type("Info", (), {"status": "ok"})(),
+            "github": type("Info", (), {"status": "ok"})(),
+        }
+
+
 async def test_liveness(client: AsyncClient) -> None:
     response = await client.get("/api/v1/health/liveness")
 
@@ -14,8 +24,21 @@ async def test_liveness(client: AsyncClient) -> None:
     assert response.json() == {"status": "ok"}
 
 
-async def test_readiness_db_up(client: AsyncClient) -> None:
-    response = await client.get("/api/v1/health/readiness")
+async def test_readiness_db_up() -> None:
+    app = create_app()
+
+    class HealthySession:
+        async def execute(self, *_args, **_kwargs):
+            return None
+
+    async def healthy_get_db():
+        yield HealthySession()
+
+    app.dependency_overrides[get_db] = healthy_get_db
+    app.dependency_overrides[get_mcp_client_pool] = lambda: HealthyPool()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/health/readiness")
 
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
@@ -47,15 +70,6 @@ async def test_readiness_with_pool_override() -> None:
     class HealthySession:
         async def execute(self, *_args, **_kwargs):
             return None
-
-    class HealthyPool:
-        async def connect_all(self):
-            return {
-                "file_search": type("Info", (), {"status": "ok"})(),
-                "web_fetch": type("Info", (), {"status": "ok"})(),
-                "sqlite_query": type("Info", (), {"status": "ok"})(),
-                "github": type("Info", (), {"status": "ok"})(),
-            }
 
     async def healthy_get_db():
         yield HealthySession()

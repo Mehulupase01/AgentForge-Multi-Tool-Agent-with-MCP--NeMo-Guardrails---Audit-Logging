@@ -145,7 +145,7 @@ async def test_sse_stream_is_compatible_with_ui_and_cli_parsers(sse_app) -> None
 
 async def test_cli_task_run_emits_stream(session_factory, sse_app) -> None:
     port = free_port()
-    python_exe = ROOT / ".venv" / "Scripts" / "python.exe"
+    python_exe = Path(sys.executable)
     cli_pythonpath = os.pathsep.join([str(CLI_SRC)])
 
     with run_server(sse_app, port=port) as base_url:
