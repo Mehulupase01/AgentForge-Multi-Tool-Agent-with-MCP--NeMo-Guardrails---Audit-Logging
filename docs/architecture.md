@@ -107,3 +107,20 @@ Phase 6 establishes the safety rails around task intake, tool execution, and LLM
 ## Phase 7 Scope
 
 Phase 7 establishes the typed approval queue, persistent HITL checkpoints, approval lifecycle APIs, and resumable task execution that later red-team and UI phases can exercise directly.
+
+## Red-Team Layer
+
+- `redteam_runs` captures one execution of the adversarial safety suite, including commit SHA, aggregate pass/fail counts, and compliance percentage.
+- `redteam_results` stores one persisted outcome per scenario, including category, expected and actual outcomes, and structured diagnostic details.
+- `RedteamRunner` executes scenarios through the real FastAPI task intake path, persists results, writes a JUnit XML report, and records `redteam.run_started` plus `redteam.run_completed` audit events.
+- The control plane now exposes `POST /api/v1/redteam/run`, `GET /api/v1/redteam/runs`, `GET /api/v1/redteam/runs/{id}`, and `GET /api/v1/redteam/runs/{id}/results`.
+
+## Red-Team Verification Shape
+
+- The committed suite contains 50 adversarial scenarios across `prompt_injection`, `pii_leak`, `data_exfil`, `jailbreak`, `tool_abuse`, and `goal_hijack`.
+- On this host and API key, the final suite is intentionally guardrail-first and fully adversarial so it remains stable under OpenRouter free-tier daily request limits.
+- Benign PII redaction coverage remains in the Phase 6 guardrail tests; Phase 8 focuses on whether adversarial prompts are blocked, audited, and persisted correctly.
+
+## Phase 8 Scope
+
+Phase 8 establishes the persisted red-team run/result model, the adversarial scenario corpus, the runner and CLI report path, the redteam APIs, and the CI workflow that enforces the safety threshold.

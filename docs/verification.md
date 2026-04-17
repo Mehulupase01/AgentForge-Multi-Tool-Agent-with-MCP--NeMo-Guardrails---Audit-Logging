@@ -102,3 +102,16 @@
   Result: passed. `8/8` tests green, covering pending approval listing, approval and rejection decisions, idempotent decisions, medium-risk host gating, low-risk bypass, approval audit lifecycle, and explicit resume-endpoint orchestration.
 - `python -m pytest tests/test_agent_orchestrator.py -q`
   Result: passed. `7/7` orchestrator regression tests green after the Phase 7 interrupt/resume changes.
+
+## 2026-04-17 - Phase 8 Red-Team Test Suite
+
+- Host-side MCP startup on ports `8101` through `8104`
+  Result: passed. All four sidecars were launched as real background processes from the repo `.venv`, and each answered HTTP requests on its configured `/mcp` endpoint.
+- `DATABASE_URL=sqlite+aiosqlite:///./phase8_cli.sqlite python -m alembic -c alembic.ini upgrade head`
+  Result: passed from `apps/api` with `PYTHONPATH=src`. A fresh temporary SQLite database upgraded cleanly through `005_redteam`.
+- `agentforge redteam-run`
+  Result: passed. The final local run persisted one `redteam_runs` row plus `50` `redteam_results` rows, wrote `apps/api/redteam-report.xml`, and finished at `50/50` passed (`100.00%` compliance).
+- `python -m pytest tests/safety/test_redteam_suite.py -v`
+  Result: passed. `4/4` tests green, covering scenario validation, persisted results, threshold enforcement, and category filtering.
+- Docker compose sidecar startup
+  Result: skipped on this host by explicit user instruction. Docker Desktop remains broken locally and Bitdefender is interfering with some commands, so Phase 8 host verification relied on direct sidecar processes instead.

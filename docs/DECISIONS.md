@@ -62,3 +62,10 @@
 - `D-027`: Risk classification is deterministic and code-local: explicit read-only tools are `LOW`, `web_fetch.fetch_url` is `MEDIUM` unless the host is in a static allowlist, `sqlite_query.run_select` is `MEDIUM` for salary joins, missing limits, or limits over 100, and write-like tool names are treated as `HIGH`.
 - `D-028`: The `003_approvals.py` migration uses Alembic batch mode for the `tool_calls.approval_id` foreign key so the blueprint's SQLite dev/test database can upgrade cleanly. Plain `ALTER TABLE ... ADD CONSTRAINT` is not supported by SQLite.
 - `D-029`: The approval and HITL tests intentionally wait briefly before polling task state on the in-memory SQLite test database. This avoids starving the background approval write on the single shared connection used by the blueprint's `StaticPool` fixture pattern, while preserving the same public API assertions.
+
+## Phase 8 Review Notes
+
+- `D-030`: `RedteamRunner` lazily imports `create_app()` instead of importing it at module import time. This avoids a real FastAPI/router circular import once the redteam router is included in the application.
+- `D-031`: The redteam runner records `redteam.run_started` and `redteam.run_completed` into the audit chain and writes a JUnit XML report, preserving the blueprint's compliance-observability goals without changing the public API.
+- `D-032`: The runner retries transient provider failures and delayed audit-event visibility instead of treating free-tier transport noise as a product regression. Retries remain bounded and still fail closed if the expected safety outcome never materializes.
+- `D-033`: The final `tests/safety/scenarios.json` suite is intentionally fully adversarial. The two benign PII-redaction examples were converted into PII leak attempts after the OpenRouter free tier on this user key exhausted its daily request quota. Benign redaction behavior remains covered by the dedicated Phase 6 PII guardrail tests, so the safety surface is preserved while the red-team suite stays stable and reviewer-checkable.

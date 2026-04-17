@@ -2,6 +2,7 @@ from agentforge.models.approval import Approval, ApprovalDecision, RiskLevel
 from agentforge.models.audit_event import AuditEvent
 from agentforge.models.corpus import CorpusDocument
 from agentforge.models.llm_call import LLMCall
+from agentforge.models.redteam import RedteamCategory, RedteamOutcome, RedteamResult, RedteamRun
 from agentforge.models.session import Session, SessionStatus
 from agentforge.models.task import Task, TaskStatus
 from agentforge.models.task_step import StepStatus, StepType, TaskStep
@@ -13,6 +14,10 @@ __all__ = [
     "AuditEvent",
     "CorpusDocument",
     "LLMCall",
+    "RedteamCategory",
+    "RedteamOutcome",
+    "RedteamResult",
+    "RedteamRun",
     "RiskLevel",
     "Session",
     "SessionStatus",

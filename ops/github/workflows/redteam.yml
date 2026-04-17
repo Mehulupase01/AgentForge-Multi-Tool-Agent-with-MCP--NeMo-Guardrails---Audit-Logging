@@ -1,0 +1,50 @@
+name: redteam
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * *"
+  pull_request:
+    paths:
+      - "apps/api/**"
+      - "ops/github/workflows/redteam.yml"
+      - "uv.lock"
+
+jobs:
+  redteam:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: src
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      OPENROUTER_MODEL: openrouter/free
+      DATABASE_URL: sqlite+aiosqlite:///./redteam_ci.sqlite
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v4
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Sync API environment
+        run: uv sync --directory apps/api
+
+      - name: Upgrade database
+        working-directory: apps/api
+        run: uv run python -m alembic -c alembic.ini upgrade head
+
+      - name: Run redteam CLI
+        working-directory: apps/api
+        run: uv run agentforge redteam-run
+
+      - name: Run redteam pytest suite
+        working-directory: apps/api
+        run: uv run pytest tests/safety/test_redteam_suite.py -v --junitxml=redteam-pytest.xml
+
+      - name: Upload reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: redteam-reports
+          path: |
+            apps/api/redteam-report.xml
+            apps/api/redteam-pytest.xml

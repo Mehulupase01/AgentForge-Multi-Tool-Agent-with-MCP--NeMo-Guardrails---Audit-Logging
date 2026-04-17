@@ -74,6 +74,14 @@ $env:PYTHONPATH='src'; $env:DEBUG='false'; .\.venv\Scripts\python.exe -m pytest 
 $env:PYTHONPATH='src'; $env:DEBUG='false'; .\.venv\Scripts\python.exe -m pytest tests/test_agent_orchestrator.py -q
 ```
 
+### Phase 8 verified
+
+```powershell
+$env:PYTHONPATH='src'; $env:DATABASE_URL='sqlite+aiosqlite:///./phase8_cli.sqlite'; .\.venv\Scripts\python.exe -m alembic -c alembic.ini upgrade head
+$env:PYTHONPATH='src'; $env:DEBUG='false'; .\.venv\Scripts\agentforge.exe redteam-run
+$env:PYTHONPATH='src'; $env:DEBUG='false'; .\.venv\Scripts\python.exe -m pytest tests/safety/test_redteam_suite.py -v
+```
+
 ### Verification Notes
 
 - Host verification used Python `3.12.10` provisioned by `uv`, matching the blueprint's Python 3.12 runtime requirement despite the machine also having Python 3.13 installed.
@@ -91,6 +99,8 @@ $env:PYTHONPATH='src'; $env:DEBUG='false'; .\.venv\Scripts\python.exe -m pytest 
 - The repo `.venv` does not expose `pip`, so the local Phase 6 spaCy model install used a direct `uv pip install --python ... <wheel-url>` invocation instead of `python -m spacy download ... --direct`.
 - The Phase 7 Alembic verification used a fresh temporary SQLite URL (`phase7_verify.sqlite`) so the full upgrade path could be validated from a clean database without relying on the existing local dev DB state.
 - The approval and HITL tests use short initial delays before polling the API because the blueprint's in-memory SQLite test configuration runs through a single shared connection; without that settle window, concurrent read polling can starve the background approval write on this Windows host.
+- Phase 8 local verification used host-launched MCP sidecars on ports `8101` through `8104`, but the final 50-scenario suite was intentionally fully adversarial and guardrail-blocked at task intake so it stayed stable under OpenRouter free-tier daily request limits.
+- The benign PII-redaction path remains covered by the dedicated Phase 6 guardrail suites; Phase 8 now focuses purely on adversarial prompt injection, exfiltration, jailbreak, tool-abuse, goal-hijack, and PII leak attempts.
 
 ## Active Decisions
 
@@ -120,7 +130,7 @@ $env:PYTHONPATH='src'; $env:DEBUG='false'; .\.venv\Scripts\python.exe -m pytest 
 - Phase 5 (Agent Orchestrator): complete and verified
 - Phase 6 (Guardrails Layer): complete and verified
 - Phase 7 (Human-in-the-Loop Approval): complete and verified
-- Phase 8 (Red-Team Test Suite): not started
+- Phase 8 (Red-Team Test Suite): complete and verified
 - Phase 9 (Streamlit UI + CLI): not started
 - Phase 10 (Hardening & Release): not started
 

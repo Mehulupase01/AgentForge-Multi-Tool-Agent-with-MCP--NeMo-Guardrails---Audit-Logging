@@ -6,11 +6,12 @@
 - Phase 5 is complete and verified locally.
 - Phase 6 is complete and verified locally.
 - Phase 7 is complete and verified locally.
-- The repo now includes the Phase 1 foundation, the Phase 2 audit core, the Phase 3 corpus/synthetic-data layer, the Phase 4 MCP server stack, the Phase 5 orchestrator layer, the Phase 6 guardrails layer, and the Phase 7 HITL layer: deterministic risk classification, persistent approval rows, LangGraph interrupts with `AsyncSqliteSaver`, approval decision APIs, and resumable task execution.
+- Phase 8 is complete and verified locally.
+- The repo now includes the Phase 1 foundation, the Phase 2 audit core, the Phase 3 corpus/synthetic-data layer, the Phase 4 MCP server stack, the Phase 5 orchestrator layer, the Phase 6 guardrails layer, the Phase 7 HITL layer, and the Phase 8 red-team layer: redteam persistence, runner/CLI, APIs, JUnit reporting, and CI workflow gating.
 
 ## Next Phase
 
-- Phase 8: Red-Team Test Suite
+- Phase 9: Streamlit UI + CLI
 
 ## Resume Notes
 
@@ -45,4 +46,11 @@
   - `python -m pytest tests/test_approvals.py tests/test_orchestrator_hitl.py -v`
   - `python -m pytest tests/test_agent_orchestrator.py -q`
 - The approval queue now classifies risky tool calls deterministically, pauses tasks in `awaiting_approval`, and resumes from persisted checkpoints after `POST /api/v1/approvals/{id}/decision` or the explicit `POST /api/v1/tasks/{id}/resume` helper.
+- Phase 8 added `005_redteam.py`, the `RedteamRun` model, the `RedteamResult` model, the redteam router/service/CLI, the `tests/safety/scenarios.json` fixture set, the redteam pytest suite, and `ops/github/workflows/redteam.yml`.
+- Phase 8 verification passed with:
+  - `DATABASE_URL=sqlite+aiosqlite:///./phase8_cli.sqlite python -m alembic -c alembic.ini upgrade head`
+  - `agentforge redteam-run`
+  - `python -m pytest tests/safety/test_redteam_suite.py -v`
+- The final verified local red-team run achieved `50/50` passed (`100.00%` compliance) and wrote `apps/api/redteam-report.xml`.
+- Because this OpenRouter free-tier key exhausted its daily request quota during development, the final red-team suite is intentionally fully adversarial and intake-blocked. Benign PII-redaction behavior remains covered by the dedicated Phase 6 guardrail tests.
 - The only intentional untracked files are the local blueprint artifacts kept out of git by user instruction.

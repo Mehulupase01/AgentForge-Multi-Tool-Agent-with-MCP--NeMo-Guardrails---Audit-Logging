@@ -3,6 +3,7 @@ from __future__ import annotations
 import click
 
 from agentforge.tools.ingest_corpus import ingest_corpus_command
+from agentforge.tools.run_redteam import run_redteam_command
 from agentforge.tools.seed_synthetic_db import seed_synthetic_command
 
 
@@ -13,6 +14,7 @@ def main() -> None:
 
 main.add_command(seed_synthetic_command)
 main.add_command(ingest_corpus_command)
+main.add_command(run_redteam_command)
 
 
 if __name__ == "__main__":
