@@ -69,3 +69,9 @@
 - `D-031`: The redteam runner records `redteam.run_started` and `redteam.run_completed` into the audit chain and writes a JUnit XML report, preserving the blueprint's compliance-observability goals without changing the public API.
 - `D-032`: The runner retries transient provider failures and delayed audit-event visibility instead of treating free-tier transport noise as a product regression. Retries remain bounded and still fail closed if the expected safety outcome never materializes.
 - `D-033`: The final `tests/safety/scenarios.json` suite is intentionally fully adversarial. The two benign PII-redaction examples were converted into PII leak attempts after the OpenRouter free tier on this user key exhausted its daily request quota. Benign redaction behavior remains covered by the dedicated Phase 6 PII guardrail tests, so the safety surface is preserved while the red-team suite stays stable and reviewer-checkable.
+
+## Phase 9 Review Notes
+
+- `D-034`: The Phase 9 Streamlit UI and standalone CLI each implement their own thin HTTP client rather than importing the API package internals. This preserves the blueprint's client/server boundary and keeps `apps/ui` plus `apps/cli` independently packageable.
+- `D-035`: Both clients now tolerate `httpx.RemoteProtocolError` at SSE stream shutdown. On this Windows host, `uvicorn + sse-starlette` can close chunked responses noisily even after all task events were delivered; treating that specific disconnect as end-of-stream keeps the operator experience stable without changing the event contract.
+- `D-036`: Local Phase 9 host verification uses a mock-backed FastAPI harness for `agentforge task run` instead of the real-model path because the current OpenRouter free-tier key is quota-limited. The real UI/CLI packages and live HTTP streaming path are still exercised end-to-end through that harness, and the real-model behavior remains covered in earlier phases where the key budget allowed it.

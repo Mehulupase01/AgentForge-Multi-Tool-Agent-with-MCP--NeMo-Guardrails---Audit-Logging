@@ -1,0 +1,19 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agentforge-cli"
+version = "0.1.0"
+description = "CLI client for AgentForge"
+requires-python = "==3.12.*"
+dependencies = [
+  "click==8.1.7",
+  "httpx==0.28.1",
+]
+
+[project.scripts]
+agentforge = "agentforge_cli.main:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agentforge_cli"]

@@ -115,3 +115,14 @@
   Result: passed. `4/4` tests green, covering scenario validation, persisted results, threshold enforcement, and category filtering.
 - Docker compose sidecar startup
   Result: skipped on this host by explicit user instruction. Docker Desktop remains broken locally and Bitdefender is interfering with some commands, so Phase 8 host verification relied on direct sidecar processes instead.
+
+## 2026-04-17 - Phase 9 Streamlit UI And CLI
+
+- `uv pip install --python .venv\\Scripts\\python.exe streamlit==1.41.1 pandas==2.2.3`
+  Result: passed. The repo `.venv` now includes the pinned Streamlit and pandas dependencies required by the new UI package.
+- `python -m pytest apps/api/tests/test_sse_compat.py apps/ui/tests/test_imports.py -v`
+  Result: passed. `3/3` tests green, covering SSE parser compatibility for both clients, CLI subprocess streaming against a mock-backed API server, and Streamlit page import smoke coverage.
+- Mock-backed host operator flow
+  Result: passed. A local uvicorn harness with the existing mock orchestrator stack served the API on an ephemeral port; `agentforge session new`, `agentforge task run "Find transformer content and summarize it."`, and `agentforge audit verify` all completed successfully against that server.
+- Headless Streamlit boot
+  Result: passed. `streamlit run apps/ui/src/agentforge_ui/app.py --server.headless=true` served HTTP `200` on an ephemeral local port when pointed at the same mock-backed API harness.

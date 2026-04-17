@@ -7,11 +7,12 @@
 - Phase 6 is complete and verified locally.
 - Phase 7 is complete and verified locally.
 - Phase 8 is complete and verified locally.
-- The repo now includes the Phase 1 foundation, the Phase 2 audit core, the Phase 3 corpus/synthetic-data layer, the Phase 4 MCP server stack, the Phase 5 orchestrator layer, the Phase 6 guardrails layer, the Phase 7 HITL layer, and the Phase 8 red-team layer: redteam persistence, runner/CLI, APIs, JUnit reporting, and CI workflow gating.
+- Phase 9 is complete and verified locally.
+- The repo now includes the Phase 1 foundation, the Phase 2 audit core, the Phase 3 corpus/synthetic-data layer, the Phase 4 MCP server stack, the Phase 5 orchestrator layer, the Phase 6 guardrails layer, the Phase 7 HITL layer, the Phase 8 red-team layer, and the Phase 9 operator interfaces: Streamlit UI pages, a standalone CLI package, SSE compatibility coverage, and headless import/stream verification.
 
 ## Next Phase
 
-- Phase 9: Streamlit UI + CLI
+- Phase 10: Hardening & Release
 
 ## Resume Notes
 
@@ -53,4 +54,10 @@
   - `python -m pytest tests/safety/test_redteam_suite.py -v`
 - The final verified local red-team run achieved `50/50` passed (`100.00%` compliance) and wrote `apps/api/redteam-report.xml`.
 - Because this OpenRouter free-tier key exhausted its daily request quota during development, the final red-team suite is intentionally fully adversarial and intake-blocked. Benign PII-redaction behavior remains covered by the dedicated Phase 6 guardrail tests.
+- Phase 9 added `apps/ui`, `apps/cli`, the shared SSE parsing/client helpers, `apps/api/tests/test_sse_compat.py`, and `apps/ui/tests/test_imports.py`.
+- Phase 9 verification passed with:
+  - `uv pip install --python .venv\\Scripts\\python.exe streamlit==1.41.1 pandas==2.2.3`
+  - `python -m pytest apps/api/tests/test_sse_compat.py apps/ui/tests/test_imports.py -v`
+  - a local mock-backed host verification harness where `agentforge session new`, `agentforge task run "Find transformer content and summarize it."`, and `agentforge audit verify` all succeeded, and a headless Streamlit boot returned HTTP `200`
+- The CLI package is now separate from the API package and talks to the FastAPI control plane over HTTP exactly as the blueprint intended. The API package still keeps its internal maintenance CLI for Phase 3 and Phase 8 operator utilities.
 - The only intentional untracked files are the local blueprint artifacts kept out of git by user instruction.

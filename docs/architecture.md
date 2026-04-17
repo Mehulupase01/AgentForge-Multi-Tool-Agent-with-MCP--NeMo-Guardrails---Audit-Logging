@@ -124,3 +124,13 @@ Phase 7 establishes the typed approval queue, persistent HITL checkpoints, appro
 ## Phase 8 Scope
 
 Phase 8 establishes the persisted red-team run/result model, the adversarial scenario corpus, the runner and CLI report path, the redteam APIs, and the CI workflow that enforces the safety threshold.
+
+## Operator Interfaces
+
+- `apps/ui` is now a real Streamlit operator surface with a home dashboard plus dedicated pages for task execution, approvals, audit browsing, and red-team runs.
+- `apps/cli` is now a standalone HTTP client package exposing `agentforge session new`, `agentforge task run`, `agentforge approval list`, `agentforge approval approve`, and `agentforge audit verify`.
+- Both clients parse the same `/api/v1/tasks/{id}/stream` SSE contract and rely on the control plane rather than importing orchestration logic directly.
+
+## Phase 9 Scope
+
+Phase 9 establishes the standalone Streamlit UI package, the standalone CLI package, SSE compatibility coverage, and the operator-facing flows that sit on top of the previously completed API surface.

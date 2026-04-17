@@ -82,6 +82,13 @@ $env:PYTHONPATH='src'; $env:DEBUG='false'; .\.venv\Scripts\agentforge.exe redtea
 $env:PYTHONPATH='src'; $env:DEBUG='false'; .\.venv\Scripts\python.exe -m pytest tests/safety/test_redteam_suite.py -v
 ```
 
+### Phase 9 verified
+
+```powershell
+uv pip install --python .\.venv\Scripts\python.exe streamlit==1.41.1 pandas==2.2.3
+$env:PYTHONPATH='D:\Mehul-Projects\AgentForge- Multi-Tool Agent with MCP, NeMo Guardrails & Audit Logging\apps\api\src'; $env:DEBUG='false'; .\.venv\Scripts\python.exe -m pytest apps/api/tests/test_sse_compat.py apps/ui/tests/test_imports.py -v
+```
+
 ### Verification Notes
 
 - Host verification used Python `3.12.10` provisioned by `uv`, matching the blueprint's Python 3.12 runtime requirement despite the machine also having Python 3.13 installed.
@@ -101,6 +108,7 @@ $env:PYTHONPATH='src'; $env:DEBUG='false'; .\.venv\Scripts\python.exe -m pytest 
 - The approval and HITL tests use short initial delays before polling the API because the blueprint's in-memory SQLite test configuration runs through a single shared connection; without that settle window, concurrent read polling can starve the background approval write on this Windows host.
 - Phase 8 local verification used host-launched MCP sidecars on ports `8101` through `8104`, but the final 50-scenario suite was intentionally fully adversarial and guardrail-blocked at task intake so it stayed stable under OpenRouter free-tier daily request limits.
 - The benign PII-redaction path remains covered by the dedicated Phase 6 guardrail suites; Phase 8 now focuses purely on adversarial prompt injection, exfiltration, jailbreak, tool-abuse, goal-hijack, and PII leak attempts.
+- Phase 9 local verification used a mock-backed host API harness for the CLI streaming and audit commands because the real-model path is currently quota-limited on this OpenRouter free-tier key. The UI itself was also verified headlessly by serving Streamlit and confirming HTTP `200` from the home page.
 
 ## Active Decisions
 
@@ -131,7 +139,7 @@ $env:PYTHONPATH='src'; $env:DEBUG='false'; .\.venv\Scripts\python.exe -m pytest 
 - Phase 6 (Guardrails Layer): complete and verified
 - Phase 7 (Human-in-the-Loop Approval): complete and verified
 - Phase 8 (Red-Team Test Suite): complete and verified
-- Phase 9 (Streamlit UI + CLI): not started
+- Phase 9 (Streamlit UI + CLI): complete and verified
 - Phase 10 (Hardening & Release): not started
 
 ## Update Rule

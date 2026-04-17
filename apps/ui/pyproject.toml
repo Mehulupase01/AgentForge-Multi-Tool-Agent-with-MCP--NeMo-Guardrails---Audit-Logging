@@ -1,0 +1,17 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agentforge-ui"
+version = "0.1.0"
+description = "Streamlit operator UI for AgentForge"
+requires-python = "==3.12.*"
+dependencies = [
+  "streamlit==1.41.1",
+  "httpx==0.28.1",
+  "pandas==2.2.3",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agentforge_ui"]
