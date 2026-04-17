@@ -51,6 +51,14 @@ python -m sqlite3 fixtures/synthetic.sqlite "SELECT COUNT(*) FROM projects;"
 .\.venv\Scripts\python.exe -m pytest apps/api/tests/test_health.py apps/api/tests/test_mcp_client_pool.py -q
 ```
 
+### Phase 5 verified
+
+```powershell
+$env:PYTHONPATH='src'; .\.venv\Scripts\python.exe -m alembic -c alembic.ini upgrade head
+.\.venv\Scripts\python.exe -m pytest apps/mcp_servers/file_search/tests -q
+.\.venv\Scripts\python.exe -m pytest tests/test_health.py tests/test_mcp_client_pool.py tests/test_agent_orchestrator.py -q
+```
+
 ### Verification Notes
 
 - Host verification used Python `3.12.10` provisioned by `uv`, matching the blueprint's Python 3.12 runtime requirement despite the machine also having Python 3.13 installed.
@@ -64,6 +72,7 @@ python -m sqlite3 fixtures/synthetic.sqlite "SELECT COUNT(*) FROM projects;"
 - `uv sync --directory apps/api` is currently unreliable on this Windows host because the already-pinned `nemoguardrails` dependency chain builds `annoy`, which needs `rc.exe`. Phase 4 local verification therefore used targeted installs into the repo `.venv` plus direct `python -m pytest` invocations.
 - Phase 4 local live verification used port `8013` for the API because host port `8000` remains occupied by an unrelated local FastAPI service on this machine.
 - Docker verification for Phase 4 is intentionally skipped on this host by explicit user instruction because Docker Desktop is currently broken locally and Bitdefender is interfering with some process startup behavior.
+- Phase 5 local live verification used port `8014` for the API because host port `8000` remains occupied by an unrelated local FastAPI service on this machine.
 
 ## Active Decisions
 
@@ -79,6 +88,8 @@ python -m sqlite3 fixtures/synthetic.sqlite "SELECT COUNT(*) FROM projects;"
 - Audit chain writes are serialized with `pg_advisory_xact_lock(99)` on PostgreSQL and an async process-local lock in SQLite-backed tests to keep `sequence` monotonic under concurrent writes.
 - Fixture strategy: keep `fixtures/synthetic.sqlite` as a separate generated SQLite tool database, and keep the deterministic markdown corpus in tracked repo-root `fixtures/corpus/`.
 - MCP client connections are short-lived per operation with cached tool metadata. This avoids cross-task shutdown issues seen with long-lived `streamable_http` sessions on this Windows host while preserving the same public API behavior.
+- OpenRouter is the primary live-model path. The default model is `openrouter/free`, and planner requests enforce structured JSON output plus `require_parameters=true` so the free router selects only providers that support the JSON plan contract.
+- `file_search.search_corpus` now applies a lightweight singular/plural term expansion so natural operator queries like `transformers` still match fixture documents containing `transformer`.
 
 ## Current Execution Truth
 
@@ -87,7 +98,7 @@ python -m sqlite3 fixtures/synthetic.sqlite "SELECT COUNT(*) FROM projects;"
 - Phase 2 (Audit Logging Core): complete and verified
 - Phase 3 (Synthetic Data & Corpus): complete and verified
 - Phase 4 (MCP Tool Servers): complete and verified locally, with Docker verification explicitly waived by user instruction on this machine
-- Phase 5 (Agent Orchestrator): not started
+- Phase 5 (Agent Orchestrator): complete and verified
 - Phase 6 (Guardrails Layer): not started
 - Phase 7 (Human-in-the-Loop Approval): not started
 - Phase 8 (Red-Team Test Suite): not started

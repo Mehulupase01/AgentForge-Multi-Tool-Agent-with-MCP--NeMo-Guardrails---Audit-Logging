@@ -63,3 +63,24 @@ Phase 3 establishes the deterministic corpus generator, corpus ingestion and lis
 ## Phase 4 Scope
 
 Phase 4 establishes the four MCP sidecars, the API-side MCP discovery/dispatch layer, readiness integration for sidecar health, and the sidecar/control-plane tests that later orchestration phases will depend on.
+
+## Orchestrator Layer
+
+- The control plane now exposes `POST /api/v1/sessions/{id}/tasks`, `GET /api/v1/tasks/{id}`, `GET /api/v1/tasks/{id}/steps`, `GET /api/v1/tasks/{id}/stream`, and `POST /api/v1/tasks/{id}/resume`.
+- `AgentOrchestrator` uses LangGraph with a deterministic plan-execute-record-finalize loop and a `MemorySaver` checkpointer in this phase.
+- `tool_calls` and `llm_calls` are now persisted alongside `task_steps`, which gives the audit and later guardrail phases a durable execution trail below the task level.
+- The task SSE stream replays retained history first, then subscribes to the live event queue, so operators can reconnect without losing plan or step events.
+
+## LLM Execution Path
+
+- `LLMProvider` is a thin wrapper over the OpenAI-compatible client surface, using OpenRouter as the primary live provider path on this machine.
+- The default model is `openrouter/free`, and planner calls enforce structured JSON output plus provider capability filtering so the free router selects only providers that can satisfy the plan contract.
+- Reasoning calls remain plain-text and are grounded on prior tool outputs; the prompt explicitly disallows narrating imaginary future tool calls.
+
+## Search Quality Note
+
+- The `file_search` sidecar now applies a lightweight singular/plural expansion during query matching. This keeps common operator phrasing like `transformers` aligned with corpus documents that contain `transformer` without introducing a heavier search stack.
+
+## Phase 5 Scope
+
+Phase 5 establishes the orchestrator state machine, task persistence APIs, real-time task streaming, persisted tool and LLM call records, and the live model-backed execution path that Phase 6 guardrails will wrap.

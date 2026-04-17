@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None
     openai_model: str = "gpt-4o-mini"
     openrouter_api_key: str | None = None
-    openrouter_model: str = "openai/gpt-4o-mini"
+    openrouter_model: str = "openrouter/free"
 
     mcp_file_search_url: str = "http://localhost:8101/mcp"
     mcp_web_fetch_url: str = "http://localhost:8102/mcp"
@@ -32,6 +32,17 @@ class Settings(BaseSettings):
     agentforge_api_url: str = "http://api:8000"
     agentforge_api_key: str = "dev-key"
     redteam_threshold_pct: float = 96.0
+
+    @field_validator("debug", mode="before")
+    @classmethod
+    def normalize_debug(cls, value: object) -> object:
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"release", "production", "prod"}:
+                return False
+            if normalized in {"debug", "development", "dev"}:
+                return True
+        return value
 
     model_config = SettingsConfigDict(
         env_file=".env",

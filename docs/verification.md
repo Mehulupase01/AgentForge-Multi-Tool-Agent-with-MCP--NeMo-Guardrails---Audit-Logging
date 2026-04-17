@@ -75,3 +75,14 @@
   Result: passed. Returned the expected `search_corpus` and `read_document` descriptors with JSON input schemas.
 - `docker compose -f ops/docker/compose.sidecars.yml up -d --build`
   Result: skipped on this host by explicit user instruction. Docker Desktop is currently broken locally and Bitdefender is interfering with some commands, so Docker verification is intentionally deferred until the local environment is repaired.
+
+## 2026-04-17 - Phase 5 Agent Orchestrator
+
+- `python -m alembic -c alembic.ini upgrade head`
+  Result: passed from `apps/api` with `PYTHONPATH=src`. The local SQLite dev database upgraded cleanly through `002_tool_and_llm_calls`.
+- `python -m pytest apps/mcp_servers/file_search/tests -q`
+  Result: passed. `3/3` tests green, including the added singular/plural search coverage for natural corpus queries.
+- `python -m pytest apps/api/tests/test_health.py apps/api/tests/test_mcp_client_pool.py apps/api/tests/test_agent_orchestrator.py -q`
+  Result: passed. `14/14` tests green, confirming no orchestrator regressions against the prior health and MCP integration surfaces.
+- Live host-side smoke test
+  Result: passed. All four sidecars were started as real background processes on ports `8101` through `8104`, the API was started on `8014`, and `POST /api/v1/sessions/{id}/tasks` completed end-to-end against OpenRouter with the prompt `Find 3 articles about transformers in the corpus and summarize them.` The task finished `completed` with a non-empty `final_response` summarizing `01-transformer-architectures-in-practice.md`.

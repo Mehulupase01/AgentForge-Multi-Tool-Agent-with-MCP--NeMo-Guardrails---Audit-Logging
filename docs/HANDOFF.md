@@ -3,11 +3,12 @@
 ## Current State
 
 - Phase 4 is complete and verified locally.
-- The repo now includes the Phase 1 foundation, the Phase 2 audit core, the Phase 3 corpus/synthetic-data layer, and the Phase 4 MCP server stack: four sidecar packages (`file_search`, `web_fetch`, `sqlite_query`, `github`), the API-side `MCPClientPool`, `/api/v1/mcp/servers`, `/api/v1/mcp/servers/{name}/tools`, and readiness integration that reports live MCP status.
+- Phase 5 is complete and verified locally.
+- The repo now includes the Phase 1 foundation, the Phase 2 audit core, the Phase 3 corpus/synthetic-data layer, the Phase 4 MCP server stack, and the Phase 5 orchestrator layer: LangGraph task execution, task/task-step/tool-call/llm-call persistence, SSE task streaming, the task API surface, and a live OpenRouter-backed smoke path.
 
 ## Next Phase
 
-- Phase 5: Agent Orchestrator
+- Phase 6: Guardrails Layer
 
 ## Resume Notes
 
@@ -25,4 +26,11 @@
 - Phase 4 used `mcp==1.27.0` plus `pydantic==2.11.0` because the blueprint pin `mcp==1.1.2` did not expose the `FastMCP` + `streamable_http` APIs required by the blueprint architecture.
 - Phase 4 local verification passed via pytest and live host-side sidecar/API startup. Docker verification is intentionally skipped on this machine by explicit user instruction because Docker Desktop is currently broken locally and Bitdefender is interfering with some commands.
 - `uv sync --directory apps/api` is still unreliable on this Windows host because the already-pinned `nemoguardrails` chain builds `annoy`; if that blocks future phases, continue with targeted `.venv` installs or fix the Windows SDK/toolchain first.
+- Phase 5 added `002_tool_and_llm_calls.py`, `ToolCall` and `LLMCall` models, the task router, the LangGraph orchestrator, the per-task SSE event bus, and the thin LLM provider wrapper.
+- Phase 5 verification passed with:
+  - `python -m alembic -c alembic.ini upgrade head`
+  - `python -m pytest apps/mcp_servers/file_search/tests -q`
+  - `python -m pytest apps/api/tests/test_health.py apps/api/tests/test_mcp_client_pool.py apps/api/tests/test_agent_orchestrator.py -q`
+  - a live host-side smoke run on port `8014` with all four sidecars plus the API, using OpenRouter and the prompt `Find 3 articles about transformers in the corpus and summarize them.`
+- The successful live smoke completed with a non-empty `final_response` summarizing `01-transformer-architectures-in-practice.md`.
 - The only intentional untracked files are the local blueprint artifacts kept out of git by user instruction.

@@ -39,3 +39,12 @@
 - `D-015`: Docker verification is explicitly waived on this host by user instruction because Docker Desktop is broken locally and Bitdefender is interfering with process startup behavior. Phase 4 closure for this machine therefore relies on passing sidecar tests, passing API MCP integration tests, and live host-side process verification.
 - No architectural changes were made to the tool surface: the four sidecars remain `file_search`, `web_fetch`, `sqlite_query`, and `github`, all exposed over `streamable_http` at `/mcp`.
 - The GitHub MCP sidecar remains read-only and requires `GITHUB_TOKEN` at startup; Phase 4 now verifies that requirement with both unit coverage and live host startup.
+
+## Phase 5 Review Notes
+
+- `D-016`: The Phase 5 LLM provider uses OpenRouter as the primary local execution path for live model runs, while still keeping compatibility with the blueprint's OpenAI client shape through the same `openai` SDK. The default OpenRouter model is `openrouter/free` because OpenRouter's official free-router docs state that it filters the current free pool by required capabilities such as tool calling and structured outputs, which is a better fit for the orchestrator's JSON-plan generation than pinning a single rotating free backend.
+- `D-017`: Settings parsing now treats common deployment strings such as `DEBUG=release` or `DEBUG=production` as `False` instead of crashing the application at import time. This is an environment-hardening fix, not a config-surface change.
+- `D-018`: The LangGraph implementation uses internal node identifiers `plan_node`, `next_step_node`, `execute_step_node`, `record_step_node`, and `finalize_node` because the library forbids node names that collide with state keys like `plan`.
+- `D-019`: The Phase 5 migration `002_tool_and_llm_calls.py` depends on `006_corpus` in the live repo lineage so existing local databases can upgrade linearly from the already-shipped Phase 3 head. This preserves upgrade safety on the real branch even though the ideal numbered order in the blueprint assumes all intermediate phase migrations land later.
+- `D-020`: Planner requests use OpenRouter structured outputs with `response_format`, provider `require_parameters=true`, and the `response-healing` plugin. This keeps the JSON plan contract reliable on the free-model path without changing the orchestrator architecture.
+- `D-021`: `file_search.search_corpus` now applies a minimal singular/plural term expansion so natural queries like `transformers` match deterministic fixture documents titled with `transformer`.

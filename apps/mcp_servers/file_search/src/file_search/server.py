@@ -26,6 +26,17 @@ def _normalize(text: str) -> list[str]:
     return [token for token in re.split(r"[^a-z0-9]+", text.lower()) if token]
 
 
+def _term_variants(terms: list[str]) -> set[str]:
+    variants: set[str] = set()
+    for term in terms:
+        variants.add(term)
+        if len(term) > 3 and term.endswith("s"):
+            variants.add(term[:-1])
+        elif len(term) > 3:
+            variants.add(f"{term}s")
+    return variants
+
+
 def build_server(corpus_path: Path | None = None) -> FastMCP:
     search_root = corpus_path or DEFAULT_CORPUS_PATH
     mcp = FastMCP(
@@ -39,7 +50,7 @@ def build_server(corpus_path: Path | None = None) -> FastMCP:
     @mcp.tool()
     def search_corpus(query: str, limit: int = 5) -> list[dict]:
         """Search the markdown corpus using simple keyword scoring."""
-        terms = _normalize(query)
+        terms = _term_variants(_normalize(query))
         results: list[dict] = []
         for path in sorted(search_root.glob("*.md")):
             if path.name.lower() == "readme.md":

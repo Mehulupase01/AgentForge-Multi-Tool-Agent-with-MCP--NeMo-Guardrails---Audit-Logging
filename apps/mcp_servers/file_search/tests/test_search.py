@@ -41,6 +41,13 @@ async def test_file_search_returns_results(client_session: ClientSession) -> Non
 
 
 @pytest.mark.anyio
+async def test_file_search_handles_simple_pluralization(client_session: ClientSession) -> None:
+    result = await client_session.call_tool("search_corpus", {"query": "neural networks"})
+    assert result.structuredContent
+    assert result.structuredContent["result"][0]["filename"] == "alpha.md"
+
+
+@pytest.mark.anyio
 async def test_read_document_returns_content(client_session: ClientSession) -> None:
     result = await client_session.call_tool("read_document", {"filename": "alpha.md"})
     payload = json.loads(result.content[0].text)
