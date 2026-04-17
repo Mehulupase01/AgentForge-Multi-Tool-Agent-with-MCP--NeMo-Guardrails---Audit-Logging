@@ -1,0 +1,27 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sqlite-query-mcp"
+version = "0.1.0"
+description = "AgentForge MCP SQLite query sidecar"
+requires-python = "==3.12.*"
+dependencies = [
+  "mcp==1.27.0",
+  "pydantic==2.11.0",
+  "structlog==24.4.0",
+  "sqlparse==0.5.3",
+]
+
+[project.scripts]
+sqlite-query-mcp = "sqlite_query.server:main"
+
+[dependency-groups]
+test = [
+  "pytest==8.3.4",
+  "anyio==4.7.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sqlite_query"]

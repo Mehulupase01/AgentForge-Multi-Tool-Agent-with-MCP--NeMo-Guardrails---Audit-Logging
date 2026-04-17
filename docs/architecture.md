@@ -47,3 +47,19 @@ Phase 2 establishes the audit logging core, session APIs, shared response envelo
 ## Phase 3 Scope
 
 Phase 3 establishes the deterministic corpus generator, corpus ingestion and listing APIs, the generated synthetic SQLite dataset, and the operator CLI entrypoints that future MCP sidecars depend on.
+
+## MCP Layer
+
+- `file_search` exposes `search_corpus` and `read_document` over `streamable_http` on port `8101`.
+- `web_fetch` exposes `fetch_url`, `hacker_news_top`, and `weather_for` on port `8102`, with a strict external-host allowlist.
+- `sqlite_query` exposes read-only access to the generated `fixtures/synthetic.sqlite` dataset on port `8103`, including `run_select` with single-statement `SELECT` enforcement via `sqlparse`.
+- `github` exposes read-only GitHub REST queries on port `8104` and requires `GITHUB_TOKEN` at startup.
+
+## MCP Control Plane Integration
+
+- The FastAPI control plane now includes `MCPClientPool`, which discovers tools across the four sidecars, exposes metadata through `/api/v1/mcp/servers` and `/api/v1/mcp/servers/{name}/tools`, and feeds live MCP status into `/api/v1/health/readiness`.
+- On this host, MCP connections are opened per operation and server metadata is cached after discovery. This keeps the API behavior deterministic while avoiding long-lived session teardown bugs in the upgraded MCP SDK.
+
+## Phase 4 Scope
+
+Phase 4 establishes the four MCP sidecars, the API-side MCP discovery/dispatch layer, readiness integration for sidecar health, and the sidecar/control-plane tests that later orchestration phases will depend on.

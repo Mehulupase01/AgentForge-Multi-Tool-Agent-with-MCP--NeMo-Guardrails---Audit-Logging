@@ -31,3 +31,11 @@
 - `corpus_service.reindex()` parses YAML frontmatter, excludes `README.md`, hashes full file content, counts tokens using whitespace split, and upserts on `filename`, which keeps the corpus row count aligned with the 53 generated fixture documents.
 - The migration numbering gap remains explicit: `006_corpus.py` depends on `004_audit_events`, while `002`, `003`, and `005` stay reserved for their owning phases rather than placeholder migrations.
 - The standalone Windows `sqlite3` shell is absent on this host, so local verification used `python -m sqlite3` to prove the generated row counts without changing the project stack.
+
+## Phase 4 Review Checklist
+
+- `D-013`: Upgrade the MCP SDK pin from `1.1.2` to `1.27.0`, and the explicit pydantic pin from `2.10.3` to `2.11.0`, because the originally pinned SDK did not expose the `FastMCP` and `streamable_http` APIs required by the blueprint's architecture. This preserves the blueprint's transport and sidecar model instead of changing the design.
+- `D-014`: Use short-lived `streamable_http` sessions in `MCPClientPool` with cached server metadata instead of keeping long-lived sessions open. On this Windows host and SDK combination, long-lived teardown triggered cross-task cancel-scope errors during pytest cleanup.
+- `D-015`: Docker verification is explicitly waived on this host by user instruction because Docker Desktop is broken locally and Bitdefender is interfering with process startup behavior. Phase 4 closure for this machine therefore relies on passing sidecar tests, passing API MCP integration tests, and live host-side process verification.
+- No architectural changes were made to the tool surface: the four sidecars remain `file_search`, `web_fetch`, `sqlite_query`, and `github`, all exposed over `streamable_http` at `/mcp`.
+- The GitHub MCP sidecar remains read-only and requires `GITHUB_TOKEN` at startup; Phase 4 now verifies that requirement with both unit coverage and live host startup.

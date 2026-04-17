@@ -7,7 +7,7 @@ services:
       - "${API_PORT:-8000}:8000"
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/agentforge
-      API_KEY: ${API_KEY:-dev-key-change-me}
+      API_KEY: ${API_KEY:-dev-key}
       API_PORT: 8000
       DEBUG: ${DEBUG:-false}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}

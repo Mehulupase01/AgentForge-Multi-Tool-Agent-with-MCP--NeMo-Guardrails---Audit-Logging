@@ -44,6 +44,13 @@ python -m sqlite3 fixtures/synthetic.sqlite "SELECT COUNT(*) FROM employees;"
 python -m sqlite3 fixtures/synthetic.sqlite "SELECT COUNT(*) FROM projects;"
 ```
 
+### Phase 4 verified
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest apps/mcp_servers/file_search/tests apps/mcp_servers/web_fetch/tests apps/mcp_servers/sqlite_query/tests apps/mcp_servers/github/tests -q
+.\.venv\Scripts\python.exe -m pytest apps/api/tests/test_health.py apps/api/tests/test_mcp_client_pool.py -q
+```
+
 ### Verification Notes
 
 - Host verification used Python `3.12.10` provisioned by `uv`, matching the blueprint's Python 3.12 runtime requirement despite the machine also having Python 3.13 installed.
@@ -53,13 +60,17 @@ python -m sqlite3 fixtures/synthetic.sqlite "SELECT COUNT(*) FROM projects;"
 - The documented demo API key is `dev-key`, and both `Settings.api_key` and `.env.example` now match the blueprint so the curl commands work as written.
 - This Windows host does not have a standalone `sqlite3` shell on `PATH`, so Phase 3 row-count verification used the standard-library CLI entrypoint `python -m sqlite3` as the local equivalent.
 - Phase 3 local host verification was executed on port `8012` because host port `8000` is still occupied by an unrelated local FastAPI service on this machine.
+- The project virtualenv was rebuilt on CPython `3.12.13` during Phase 4 because the previous Windows Store-backed 3.12 shim had gone stale. The repo-root `.venv` is now the reliable local interpreter.
+- `uv sync --directory apps/api` is currently unreliable on this Windows host because the already-pinned `nemoguardrails` dependency chain builds `annoy`, which needs `rc.exe`. Phase 4 local verification therefore used targeted installs into the repo `.venv` plus direct `python -m pytest` invocations.
+- Phase 4 local live verification used port `8013` for the API because host port `8000` remains occupied by an unrelated local FastAPI service on this machine.
+- Docker verification for Phase 4 is intentionally skipped on this host by explicit user instruction because Docker Desktop is currently broken locally and Bitdefender is interfering with some process startup behavior.
 
 ## Active Decisions
 
 - Architecture: modular monolith FastAPI control plane + 4 MCP sidecars + Streamlit UI
 - ORM: SQLAlchemy 2.0 async + Alembic
 - Agent: LangGraph 0.2.61 with SqliteSaver checkpointer (HITL via interrupts)
-- Tool protocol: MCP 1.1.2 over streamable_http
+- Tool protocol: MCP 1.27.0 over streamable_http to preserve the blueprint's intended `FastMCP` + `streamable_http` architecture after the pinned 1.1.2 API drift was confirmed locally
 - Guardrails: NeMo Guardrails 0.11.0 + presidio for PII + custom injection detector + tool allowlist
 - Audit: append-only `audit_events` with SHA-256 hash chain, integrity endpoint
 - Auth: X-API-Key header, single-user demo
@@ -67,6 +78,7 @@ python -m sqlite3 fixtures/synthetic.sqlite "SELECT COUNT(*) FROM projects;"
 - Red-team threshold: >= 96% to pass CI; target 98%
 - Audit chain writes are serialized with `pg_advisory_xact_lock(99)` on PostgreSQL and an async process-local lock in SQLite-backed tests to keep `sequence` monotonic under concurrent writes.
 - Fixture strategy: keep `fixtures/synthetic.sqlite` as a separate generated SQLite tool database, and keep the deterministic markdown corpus in tracked repo-root `fixtures/corpus/`.
+- MCP client connections are short-lived per operation with cached tool metadata. This avoids cross-task shutdown issues seen with long-lived `streamable_http` sessions on this Windows host while preserving the same public API behavior.
 
 ## Current Execution Truth
 
@@ -74,7 +86,7 @@ python -m sqlite3 fixtures/synthetic.sqlite "SELECT COUNT(*) FROM projects;"
 - Phase 1 (Foundation): complete and verified
 - Phase 2 (Audit Logging Core): complete and verified
 - Phase 3 (Synthetic Data & Corpus): complete and verified
-- Phase 4 (MCP Tool Servers): not started
+- Phase 4 (MCP Tool Servers): complete and verified locally, with Docker verification explicitly waived by user instruction on this machine
 - Phase 5 (Agent Orchestrator): not started
 - Phase 6 (Guardrails Layer): not started
 - Phase 7 (Human-in-the-Loop Approval): not started

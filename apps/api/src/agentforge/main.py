@@ -17,7 +17,9 @@ from agentforge.logging_setup import configure_logging
 from agentforge.routers.audit import router as audit_router
 from agentforge.routers.corpus import router as corpus_router
 from agentforge.routers.health import router as health_router
+from agentforge.routers.mcp import router as mcp_router
 from agentforge.routers.sessions import router as sessions_router
+from agentforge.services.mcp_client_pool import get_mcp_client_pool
 
 logger = structlog.get_logger(__name__)
 
@@ -30,6 +32,7 @@ async def lifespan(_: FastAPI):
     try:
         yield
     finally:
+        await get_mcp_client_pool().close()
         await dispose_engine()
         logger.info("application.shutdown")
 
@@ -122,6 +125,7 @@ def create_app() -> FastAPI:
     app.include_router(sessions_router, dependencies=[Depends(require_api_key)])
     app.include_router(audit_router, dependencies=[Depends(require_api_key)])
     app.include_router(corpus_router, dependencies=[Depends(require_api_key)])
+    app.include_router(mcp_router, dependencies=[Depends(require_api_key)])
 
     return app
 

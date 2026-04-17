@@ -4,6 +4,7 @@ from httpx import ASGITransport, AsyncClient
 
 from agentforge.database import get_db
 from agentforge.main import create_app
+from agentforge.services.mcp_client_pool import get_mcp_client_pool
 
 
 async def test_liveness(client: AsyncClient) -> None:
@@ -16,8 +17,8 @@ async def test_liveness(client: AsyncClient) -> None:
 async def test_readiness_db_up(client: AsyncClient) -> None:
     response = await client.get("/api/v1/health/readiness")
 
-    assert response.status_code == 200
-    assert response.json()["status"] == "ok"
+    assert response.status_code == 503
+    assert response.json()["status"] == "degraded"
     assert response.json()["database"] == "ok"
 
 
@@ -38,6 +39,35 @@ async def test_readiness_db_down() -> None:
 
     assert response.status_code == 503
     assert response.json()["database"] == "unreachable"
+
+
+async def test_readiness_with_pool_override() -> None:
+    app = create_app()
+
+    class HealthySession:
+        async def execute(self, *_args, **_kwargs):
+            return None
+
+    class HealthyPool:
+        async def connect_all(self):
+            return {
+                "file_search": type("Info", (), {"status": "ok"})(),
+                "web_fetch": type("Info", (), {"status": "ok"})(),
+                "sqlite_query": type("Info", (), {"status": "ok"})(),
+                "github": type("Info", (), {"status": "ok"})(),
+            }
+
+    async def healthy_get_db():
+        yield HealthySession()
+
+    app.dependency_overrides[get_db] = healthy_get_db
+    app.dependency_overrides[get_mcp_client_pool] = lambda: HealthyPool()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/health/readiness")
+
+    assert response.status_code == 200
+    assert response.json()["mcp_servers"]["github"] == "ok"
 
 
 async def test_app_factory_loads() -> None:

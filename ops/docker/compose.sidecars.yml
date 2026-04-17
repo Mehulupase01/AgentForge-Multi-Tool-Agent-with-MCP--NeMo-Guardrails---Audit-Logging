@@ -1,0 +1,63 @@
+services:
+  file_search:
+    build:
+      context: .
+      dockerfile: apps/mcp_servers/file_search/Dockerfile
+    environment:
+      CORPUS_PATH: /data/corpus
+      PORT: 8101
+    volumes:
+      - "./fixtures/corpus:/data/corpus:ro"
+    ports:
+      - "8101:8101"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s=socket.create_connection(('127.0.0.1', 8101), 2); s.close()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  web_fetch:
+    build:
+      context: .
+      dockerfile: apps/mcp_servers/web_fetch/Dockerfile
+    environment:
+      PORT: 8102
+    ports:
+      - "8102:8102"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s=socket.create_connection(('127.0.0.1', 8102), 2); s.close()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  sqlite_query:
+    build:
+      context: .
+      dockerfile: apps/mcp_servers/sqlite_query/Dockerfile
+    environment:
+      SYNTHETIC_DB_PATH: /data/synthetic.sqlite
+      PORT: 8103
+    volumes:
+      - "./fixtures/synthetic.sqlite:/data/synthetic.sqlite:ro"
+    ports:
+      - "8103:8103"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s=socket.create_connection(('127.0.0.1', 8103), 2); s.close()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  github:
+    build:
+      context: .
+      dockerfile: apps/mcp_servers/github/Dockerfile
+    environment:
+      GITHUB_TOKEN: ${GITHUB_TOKEN}
+      PORT: 8104
+    ports:
+      - "8104:8104"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s=socket.create_connection(('127.0.0.1', 8104), 2); s.close()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5

@@ -60,3 +60,18 @@
   Result: passed. Returned `{"indexed":0,"skipped_unchanged":53,"duration_ms":288}` against the already-generated corpus.
 - `curl -H "X-API-Key: dev-key" http://localhost:8012/api/v1/corpus/documents?page=1&per_page=5`
   Result: passed. Returned a paginated envelope with `meta.total=53` and the first 5 corpus documents. Local host verification used port `8012` because port `8000` is occupied by an unrelated local service on this machine.
+
+## 2026-04-17 - Phase 4 MCP Tool Servers
+
+- `.\.venv\Scripts\python.exe -m pytest apps/mcp_servers/file_search/tests apps/mcp_servers/web_fetch/tests apps/mcp_servers/sqlite_query/tests apps/mcp_servers/github/tests -q`
+  Result: passed. `8/8` sidecar unit tests green, covering file search, allowlist enforcement, read-only SQLite query enforcement, and GitHub token startup requirements.
+- `.\.venv\Scripts\python.exe -m pytest apps/api/tests/test_health.py apps/api/tests/test_mcp_client_pool.py -q`
+  Result: passed. `10/10` control-plane tests green, covering MCP discovery, tool listing, tool dispatch, readiness reporting, and unreachable-sidecar degradation behavior.
+- Live host-side process verification:
+  Result: passed. All four sidecars were started as real background processes on ports `8101` through `8104`, the API was started on `8013`, and `GET /api/v1/health/readiness` returned `{"status":"ok","database":"ok","mcp_servers":{"file_search":"ok","web_fetch":"ok","sqlite_query":"ok","github":"ok"}}`.
+- `curl -H "X-API-Key: dev-key" http://127.0.0.1:8013/api/v1/mcp/servers`
+  Result: passed. Returned four MCP servers with statuses `ok` and tool counts `2`, `3`, `3`, and `3`.
+- `curl -H "X-API-Key: dev-key" http://127.0.0.1:8013/api/v1/mcp/servers/file_search/tools`
+  Result: passed. Returned the expected `search_corpus` and `read_document` descriptors with JSON input schemas.
+- `docker compose -f ops/docker/compose.sidecars.yml up -d --build`
+  Result: skipped on this host by explicit user instruction. Docker Desktop is currently broken locally and Bitdefender is interfering with some commands, so Docker verification is intentionally deferred until the local environment is repaired.
