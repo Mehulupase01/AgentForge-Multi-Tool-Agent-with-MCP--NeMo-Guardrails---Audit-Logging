@@ -66,6 +66,14 @@ uv pip install --python .\.venv\Scripts\python.exe https://github.com/explosion/
 .\.venv\Scripts\python.exe -m pytest tests/test_guardrails_pii.py tests/test_guardrails_injection.py tests/test_guardrails_topic.py tests/test_guardrails_tool_allowlist.py tests/test_agent_orchestrator.py -q
 ```
 
+### Phase 7 verified
+
+```powershell
+$env:PYTHONPATH='src'; $env:DATABASE_URL='sqlite+aiosqlite:///./phase7_verify.sqlite'; .\.venv\Scripts\python.exe -m alembic -c alembic.ini upgrade head
+$env:PYTHONPATH='src'; $env:DEBUG='false'; .\.venv\Scripts\python.exe -m pytest tests/test_approvals.py tests/test_orchestrator_hitl.py -v
+$env:PYTHONPATH='src'; $env:DEBUG='false'; .\.venv\Scripts\python.exe -m pytest tests/test_agent_orchestrator.py -q
+```
+
 ### Verification Notes
 
 - Host verification used Python `3.12.10` provisioned by `uv`, matching the blueprint's Python 3.12 runtime requirement despite the machine also having Python 3.13 installed.
@@ -81,6 +89,8 @@ uv pip install --python .\.venv\Scripts\python.exe https://github.com/explosion/
 - Docker verification for Phase 4 is intentionally skipped on this host by explicit user instruction because Docker Desktop is currently broken locally and Bitdefender is interfering with some process startup behavior.
 - Phase 5 local live verification used port `8014` for the API because host port `8000` remains occupied by an unrelated local FastAPI service on this machine.
 - The repo `.venv` does not expose `pip`, so the local Phase 6 spaCy model install used a direct `uv pip install --python ... <wheel-url>` invocation instead of `python -m spacy download ... --direct`.
+- The Phase 7 Alembic verification used a fresh temporary SQLite URL (`phase7_verify.sqlite`) so the full upgrade path could be validated from a clean database without relying on the existing local dev DB state.
+- The approval and HITL tests use short initial delays before polling the API because the blueprint's in-memory SQLite test configuration runs through a single shared connection; without that settle window, concurrent read polling can starve the background approval write on this Windows host.
 
 ## Active Decisions
 
@@ -109,7 +119,7 @@ uv pip install --python .\.venv\Scripts\python.exe https://github.com/explosion/
 - Phase 4 (MCP Tool Servers): complete and verified locally, with Docker verification explicitly waived by user instruction on this machine
 - Phase 5 (Agent Orchestrator): complete and verified
 - Phase 6 (Guardrails Layer): complete and verified
-- Phase 7 (Human-in-the-Loop Approval): not started
+- Phase 7 (Human-in-the-Loop Approval): complete and verified
 - Phase 8 (Red-Team Test Suite): not started
 - Phase 9 (Streamlit UI + CLI): not started
 - Phase 10 (Hardening & Release): not started

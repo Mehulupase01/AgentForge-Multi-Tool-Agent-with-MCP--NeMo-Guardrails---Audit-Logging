@@ -11,6 +11,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from agentforge.models.base import Base, TimestampMixin, new_uuid
 
 if TYPE_CHECKING:
+    from agentforge.models.approval import Approval
     from agentforge.models.session import Session
     from agentforge.models.task_step import TaskStep
 
@@ -51,6 +52,11 @@ class Task(Base, TimestampMixin):
         back_populates="task",
         cascade="all, delete-orphan",
         order_by="TaskStep.ordinal",
+    )
+    approvals: Mapped[list["Approval"]] = relationship(
+        back_populates="task",
+        cascade="all, delete-orphan",
+        order_by="Approval.requested_at",
     )
 
     __table_args__ = (

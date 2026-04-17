@@ -1,3 +1,4 @@
+from agentforge.schemas.approval import ApprovalDecisionRequest, ApprovalResponse
 from agentforge.schemas.audit import AuditEventResponse, IntegrityResponse
 from agentforge.schemas.common import Envelope, ErrorBody, ErrorResponse, Pagination
 from agentforge.schemas.corpus import CorpusDocumentResponse, ReindexResponse
@@ -6,6 +7,8 @@ from agentforge.schemas.session import SessionCreate, SessionResponse
 from agentforge.schemas.task import PlanStep, TaskCreate, TaskResponse, TaskStepResponse
 
 __all__ = [
+    "ApprovalDecisionRequest",
+    "ApprovalResponse",
     "AuditEventResponse",
     "CorpusDocumentResponse",
     "Envelope",

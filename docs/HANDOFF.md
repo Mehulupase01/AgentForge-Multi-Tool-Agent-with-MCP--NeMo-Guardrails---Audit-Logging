@@ -5,11 +5,12 @@
 - Phase 4 is complete and verified locally.
 - Phase 5 is complete and verified locally.
 - Phase 6 is complete and verified locally.
-- The repo now includes the Phase 1 foundation, the Phase 2 audit core, the Phase 3 corpus/synthetic-data layer, the Phase 4 MCP server stack, the Phase 5 orchestrator layer, and the Phase 6 guardrails layer: deterministic guardrail enforcement, PII redaction, injection blocking, topic gating, tool allowlists, guardrail audit events, and guardrail-aware orchestrator tests.
+- Phase 7 is complete and verified locally.
+- The repo now includes the Phase 1 foundation, the Phase 2 audit core, the Phase 3 corpus/synthetic-data layer, the Phase 4 MCP server stack, the Phase 5 orchestrator layer, the Phase 6 guardrails layer, and the Phase 7 HITL layer: deterministic risk classification, persistent approval rows, LangGraph interrupts with `AsyncSqliteSaver`, approval decision APIs, and resumable task execution.
 
 ## Next Phase
 
-- Phase 7: Human-in-the-Loop Approval
+- Phase 8: Red-Team Test Suite
 
 ## Resume Notes
 
@@ -38,4 +39,10 @@
   - a local equivalent of the blueprint spaCy install step using `uv pip install --python .venv\\Scripts\\python.exe <en_core_web_sm wheel URL>` because the repo `.venv` does not expose `pip`
   - `python -m pytest apps/api/tests/test_guardrails_pii.py apps/api/tests/test_guardrails_injection.py apps/api/tests/test_guardrails_topic.py apps/api/tests/test_guardrails_tool_allowlist.py apps/api/tests/test_agent_orchestrator.py -q`
 - The guardrails layer now returns `400 GUARDRAIL_BLOCKED` for blocked task intake, persists `guardrail_block` task steps, and records the new `guardrail.*` audit events required by the blueprint.
+- Phase 7 added `003_approvals.py`, the `Approval` model/schemas/router/service, persistent LangGraph checkpoints at `runtime/orchestrator_checkpoints.sqlite`, approval-aware tool execution, and the dedicated `test_approvals.py` plus `test_orchestrator_hitl.py` suites.
+- Phase 7 verification passed with:
+  - `DATABASE_URL=sqlite+aiosqlite:///./phase7_verify.sqlite python -m alembic -c alembic.ini upgrade head`
+  - `python -m pytest tests/test_approvals.py tests/test_orchestrator_hitl.py -v`
+  - `python -m pytest tests/test_agent_orchestrator.py -q`
+- The approval queue now classifies risky tool calls deterministically, pauses tasks in `awaiting_approval`, and resumes from persisted checkpoints after `POST /api/v1/approvals/{id}/decision` or the explicit `POST /api/v1/tasks/{id}/resume` helper.
 - The only intentional untracked files are the local blueprint artifacts kept out of git by user instruction.

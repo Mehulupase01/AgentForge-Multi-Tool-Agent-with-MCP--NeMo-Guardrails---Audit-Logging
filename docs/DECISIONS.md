@@ -52,5 +52,13 @@
 ## Phase 6 Review Notes
 
 - `D-022`: The committed Phase 6 enforcement path is deterministic in Python through `GuardrailsRunner`. NeMo Guardrails config assets are present in the repo to preserve the blueprint shape, but the live blocking/redaction logic avoids making the verification suite depend on a second non-deterministic LLM judge.
-- `D-023`: Presidio is used for PII detection, but placeholder replacement is performed in-process rather than through `AnonymizerEngine`. This keeps redacted output stable across versions while preserving the blueprint’s Presidio-based detection layer.
+- `D-023`: Presidio is used for PII detection, but placeholder replacement is performed in-process rather than through `AnonymizerEngine`. This keeps redacted output stable across versions while preserving the blueprint's Presidio-based detection layer.
 - `D-024`: The local spaCy model installation used a direct wheel URL through `uv pip install --python ...` because the repo `.venv` does not expose `pip`, and the standard `python -m spacy download ... --direct` path therefore fails on this host.
+
+## Phase 7 Review Notes
+
+- `D-025`: Phase 7 adds `langgraph-checkpoint-sqlite==2.0.11`, which is the compatible upstream SQLite checkpointer line for the already-pinned `langgraph==0.2.61` and `langgraph-checkpoint<3` dependency family. This preserves the blueprint's `SqliteSaver` architecture without forcing a LangGraph upgrade.
+- `D-026`: The runtime checkpointer uses `AsyncSqliteSaver` against `runtime/orchestrator_checkpoints.sqlite`. This is the async-safe equivalent of the blueprint's `SqliteSaver` requirement and keeps the FastAPI control plane fully async while preserving persistent HITL checkpoints.
+- `D-027`: Risk classification is deterministic and code-local: explicit read-only tools are `LOW`, `web_fetch.fetch_url` is `MEDIUM` unless the host is in a static allowlist, `sqlite_query.run_select` is `MEDIUM` for salary joins, missing limits, or limits over 100, and write-like tool names are treated as `HIGH`.
+- `D-028`: The `003_approvals.py` migration uses Alembic batch mode for the `tool_calls.approval_id` foreign key so the blueprint's SQLite dev/test database can upgrade cleanly. Plain `ALTER TABLE ... ADD CONSTRAINT` is not supported by SQLite.
+- `D-029`: The approval and HITL tests intentionally wait briefly before polling task state on the in-memory SQLite test database. This avoids starving the background approval write on the single shared connection used by the blueprint's `StaticPool` fixture pattern, while preserving the same public API assertions.

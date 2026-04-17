@@ -22,6 +22,7 @@ from agentforge.models.task_step import TaskStep
 from agentforge.models.tool_call import ToolCall
 from agentforge.routers.tasks import orchestrator_dependency
 from agentforge.services.agent_orchestrator import AgentOrchestrator
+from agentforge.services.approval_service import ApprovalService
 from agentforge.services.audit_service import AuditService
 from agentforge.services.task_event_bus import TaskEventBus, get_task_event_bus
 
@@ -93,6 +94,7 @@ class FakeMCPPool:
 
 
 async def wait_for_status(client: AsyncClient, task_id: str, *terminal_statuses: str) -> dict:
+    await asyncio.sleep(0.3)
     deadline = asyncio.get_running_loop().time() + 20
     while asyncio.get_running_loop().time() < deadline:
         response = await client.get(f"/api/v1/tasks/{task_id}")
@@ -104,6 +106,7 @@ async def wait_for_status(client: AsyncClient, task_id: str, *terminal_statuses:
 
 
 async def wait_for_step_count(client: AsyncClient, task_id: str, expected_count: int) -> list[dict]:
+    await asyncio.sleep(0.3)
     deadline = asyncio.get_running_loop().time() + 15
     while asyncio.get_running_loop().time() < deadline:
         response = await client.get(f"/api/v1/tasks/{task_id}/steps")
@@ -150,6 +153,17 @@ async def wait_for_audit_event(session_factory, event_type: str) -> list[AuditEv
     raise TimeoutError(f"Timed out waiting for audit event {event_type}")
 
 
+async def wait_for_llm_call_count(session_factory, expected_count: int) -> int:
+    deadline = asyncio.get_running_loop().time() + 20
+    while asyncio.get_running_loop().time() < deadline:
+        async with session_factory() as session:
+            count = int((await session.execute(select(func.count()).select_from(LLMCall))).scalar_one())
+        if count >= expected_count:
+            return count
+        await asyncio.sleep(0.05)
+    raise TimeoutError(f"Timed out waiting for {expected_count} LLMCall rows")
+
+
 async def create_session_and_task(client: AsyncClient, prompt: str) -> tuple[str, str]:
     session_response = await client.post("/api/v1/sessions", json={})
     session_id = session_response.json()["id"]
@@ -177,7 +191,12 @@ async def guardrails_runner(tmp_path: Path) -> GuardrailsRunner:
 
 
 @pytest_asyncio.fixture
-async def orchestrator(session_factory, guardrails_runner: GuardrailsRunner) -> AsyncIterator[AgentOrchestrator]:
+async def approval_service() -> ApprovalService:
+    return ApprovalService()
+
+
+@pytest_asyncio.fixture
+async def orchestrator(session_factory, guardrails_runner: GuardrailsRunner, approval_service: ApprovalService, tmp_path: Path) -> AsyncIterator[AgentOrchestrator]:
     event_bus = TaskEventBus()
     fake_pool = FakeMCPPool()
     llm_provider = MockLLMProvider()
@@ -187,7 +206,9 @@ async def orchestrator(session_factory, guardrails_runner: GuardrailsRunner) -> 
         llm_provider=llm_provider,
         event_bus=event_bus,
         guardrails_runner=guardrails_runner,
+        approval_service=approval_service,
         audit_service=AuditService(),
+        checkpoint_path=str(tmp_path / "orchestrator_checkpoints.sqlite"),
     )
     orchestrator._fake_pool = fake_pool  # type: ignore[attr-defined]
     orchestrator._event_bus = event_bus
@@ -250,13 +271,13 @@ async def test_orchestrator_plans_and_executes_with_mock_llm(
     task_payload = await wait_for_status(task_client, task_id, "completed")
     assert task_payload["final_response"]
 
-    steps = await wait_for_db_steps(session_factory, task_id, 3)
-    assert [step.ordinal for step in steps] == [1, 2, 3]
-    assert [step.status.value for step in steps] == ["completed", "completed", "completed"]
+    steps = await wait_for_step_count(task_client, task_id, 3)
+    assert [step["ordinal"] for step in steps] == [1, 2, 3]
+    assert [step["status"] for step in steps] == ["completed", "completed", "completed"]
 
     async with session_factory() as session:
         tool_call_count = int((await session.execute(select(func.count()).select_from(ToolCall))).scalar_one())
-        llm_call_count = int((await session.execute(select(func.count()).select_from(LLMCall))).scalar_one())
+    llm_call_count = await wait_for_llm_call_count(session_factory, 2)
 
     assert tool_call_count == 2
     assert llm_call_count >= 2
@@ -377,7 +398,9 @@ async def test_orchestrator_blocks_on_disallowed_tool(
         llm_provider=MockLLMProvider(),
         event_bus=event_bus,
         guardrails_runner=runner,
+        approval_service=ApprovalService(),
         audit_service=AuditService(),
+        checkpoint_path=str(tmp_path / "disallowed_checkpoints.sqlite"),
     )
     orchestrator._fake_pool = fake_pool  # type: ignore[attr-defined]
     app = create_app()

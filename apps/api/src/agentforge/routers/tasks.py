@@ -17,6 +17,7 @@ from agentforge.models.task_step import StepStatus, StepType, TaskStep
 from agentforge.schemas.common import Envelope, Pagination
 from agentforge.schemas.task import TaskCreate, TaskResponse, TaskStepResponse
 from agentforge.services.agent_orchestrator import AgentOrchestrator, get_agent_orchestrator
+from agentforge.services.approval_service import ApprovalService, get_approval_service
 from agentforge.services.audit_service import AuditService
 from agentforge.services.llm_provider import LLMProvider, get_llm_provider
 from agentforge.services.mcp_client_pool import MCPClientPool, get_mcp_client_pool
@@ -89,6 +90,7 @@ def orchestrator_dependency(
     llm_provider: Annotated[LLMProvider, Depends(get_llm_provider)],
     event_bus: Annotated[TaskEventBus, Depends(get_task_event_bus)],
     guardrails_runner: Annotated[GuardrailsRunner, Depends(get_guardrails_runner)],
+    approval_service: Annotated[ApprovalService, Depends(get_approval_service)],
 ) -> AgentOrchestrator:
     return get_agent_orchestrator(
         session_factory=get_session_factory(),
@@ -96,6 +98,7 @@ def orchestrator_dependency(
         llm_provider=llm_provider,
         event_bus=event_bus,
         guardrails_runner=guardrails_runner,
+        approval_service=approval_service,
     )
 
 
@@ -247,14 +250,14 @@ async def stream_task(
         history = await event_bus.get_history(task_id)
         for item in history:
             yield {"event": item["event"], "data": json.dumps(item["data"], ensure_ascii=True)}
-        if history and history[-1]["event"] in {"task_completed", "task_failed"}:
+        if history and history[-1]["event"] in {"task_completed", "task_failed", "task_rejected"}:
             return
 
         async with event_bus.subscribe(task_id) as queue:
             while True:
                 item = await queue.get()
                 yield {"event": item["event"], "data": json.dumps(item["data"], ensure_ascii=True)}
-                if item["event"] in {"task_completed", "task_failed"}:
+                if item["event"] in {"task_completed", "task_failed", "task_rejected"}:
                     break
 
     return EventSourceResponse(event_generator())
@@ -264,6 +267,9 @@ async def stream_task(
 async def resume_task(
     task_id: UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
+    orchestrator: Annotated[AgentOrchestrator, Depends(orchestrator_dependency)],
 ) -> TaskResponse:
+    task = await require_task(db, task_id)
+    await orchestrator.resume_task(task.id)
     task = await require_task(db, task_id)
     return to_task_response(task)

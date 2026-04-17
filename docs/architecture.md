@@ -67,7 +67,7 @@ Phase 4 establishes the four MCP sidecars, the API-side MCP discovery/dispatch l
 ## Orchestrator Layer
 
 - The control plane now exposes `POST /api/v1/sessions/{id}/tasks`, `GET /api/v1/tasks/{id}`, `GET /api/v1/tasks/{id}/steps`, `GET /api/v1/tasks/{id}/stream`, and `POST /api/v1/tasks/{id}/resume`.
-- `AgentOrchestrator` uses LangGraph with a deterministic plan-execute-record-finalize loop and a `MemorySaver` checkpointer in this phase.
+- `AgentOrchestrator` now uses LangGraph with a deterministic plan-execute-record-finalize loop and a persistent SQLite checkpointer at `runtime/orchestrator_checkpoints.sqlite`.
 - `tool_calls` and `llm_calls` are now persisted alongside `task_steps`, which gives the audit and later guardrail phases a durable execution trail below the task level.
 - The task SSE stream replays retained history first, then subscribes to the live event queue, so operators can reconnect without losing plan or step events.
 
@@ -96,3 +96,14 @@ Phase 5 establishes the orchestrator state machine, task persistence APIs, real-
 ## Phase 6 Scope
 
 Phase 6 establishes the safety rails around task intake, tool execution, and LLM output handling, while keeping the Phase 5 orchestration APIs and persistence model intact for the later approval and red-team phases.
+
+## HITL Approval Layer
+
+- `approvals` stores the typed approval queue with `risk_level`, `risk_reason`, `action_summary`, decision metadata, and an optional link back to the persisted `approval_gate` task step.
+- Risk classification is deterministic in `ApprovalService`, so the same tool call always maps to the same approval policy without invoking an extra model.
+- Medium- and high-risk tool calls interrupt the LangGraph execution inside `execute_step_node`, set the parent task to `awaiting_approval`, and resume from the persisted checkpoint after an approval decision is recorded.
+- The control plane now exposes `GET /api/v1/approvals`, `GET /api/v1/approvals/{id}`, and `POST /api/v1/approvals/{id}/decision`.
+
+## Phase 7 Scope
+
+Phase 7 establishes the typed approval queue, persistent HITL checkpoints, approval lifecycle APIs, and resumable task execution that later red-team and UI phases can exercise directly.

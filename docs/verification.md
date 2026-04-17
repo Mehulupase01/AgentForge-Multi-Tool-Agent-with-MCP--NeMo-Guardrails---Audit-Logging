@@ -93,3 +93,12 @@
   Result: passed. This was the local equivalent of the blueprint's `python -m spacy download ... --direct` step because the repo `.venv` does not expose `pip` on this Windows host.
 - `python -m pytest apps/api/tests/test_guardrails_pii.py apps/api/tests/test_guardrails_injection.py apps/api/tests/test_guardrails_topic.py apps/api/tests/test_guardrails_tool_allowlist.py apps/api/tests/test_agent_orchestrator.py -q`
   Result: passed. `17/17` tests green, covering PII redaction, injection blocking, topic gating, allowlist enforcement, orchestrator input blocking, orchestrator redaction logging, and disallowed-tool skipping.
+
+## 2026-04-17 - Phase 7 Human-in-the-Loop Approval
+
+- `DATABASE_URL=sqlite+aiosqlite:///./phase7_verify.sqlite python -m alembic -c alembic.ini upgrade head`
+  Result: passed from `apps/api` with `PYTHONPATH=src`. A fresh temporary SQLite database upgraded cleanly through `003_approvals`, including the batch-mode `tool_calls.approval_id` foreign key change.
+- `python -m pytest tests/test_approvals.py tests/test_orchestrator_hitl.py -v`
+  Result: passed. `8/8` tests green, covering pending approval listing, approval and rejection decisions, idempotent decisions, medium-risk host gating, low-risk bypass, approval audit lifecycle, and explicit resume-endpoint orchestration.
+- `python -m pytest tests/test_agent_orchestrator.py -q`
+  Result: passed. `7/7` orchestrator regression tests green after the Phase 7 interrupt/resume changes.
