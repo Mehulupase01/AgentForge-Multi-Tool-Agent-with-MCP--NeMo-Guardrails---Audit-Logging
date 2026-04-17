@@ -7,10 +7,11 @@ RUN python -m pip install --no-cache-dir uv
 
 WORKDIR /app
 
-COPY apps/mcp_servers/file_search/pyproject.toml ./pyproject.toml
-COPY apps/mcp_servers/file_search/src ./src
-RUN uv sync --no-dev
+COPY README.md /app/README.md
+COPY apps/mcp_servers/file_search/pyproject.toml /app/apps/mcp_servers/file_search/pyproject.toml
+COPY apps/mcp_servers/file_search/src /app/apps/mcp_servers/file_search/src
+RUN uv sync --directory /app/apps/mcp_servers/file_search --no-dev
 
 EXPOSE 8101
 
-CMD ["uv", "run", "file-search-mcp"]
+CMD ["uv", "run", "--directory", "/app/apps/mcp_servers/file_search", "file-search-mcp"]

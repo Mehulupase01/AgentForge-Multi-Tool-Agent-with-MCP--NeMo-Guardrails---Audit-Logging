@@ -7,10 +7,11 @@ RUN python -m pip install --no-cache-dir uv
 
 WORKDIR /app
 
-COPY apps/mcp_servers/github/pyproject.toml ./pyproject.toml
-COPY apps/mcp_servers/github/src ./src
-RUN uv sync --no-dev
+COPY README.md /app/README.md
+COPY apps/mcp_servers/github/pyproject.toml /app/apps/mcp_servers/github/pyproject.toml
+COPY apps/mcp_servers/github/src /app/apps/mcp_servers/github/src
+RUN uv sync --directory /app/apps/mcp_servers/github --no-dev
 
 EXPOSE 8104
 
-CMD ["uv", "run", "github-mcp"]
+CMD ["uv", "run", "--directory", "/app/apps/mcp_servers/github", "github-mcp"]

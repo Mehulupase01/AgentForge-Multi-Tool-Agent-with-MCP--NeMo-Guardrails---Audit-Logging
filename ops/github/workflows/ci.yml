@@ -21,7 +21,7 @@ jobs:
       - uses: astral-sh/setup-uv@v5
       - run: uv python install 3.12
       - run: uv sync --directory apps/api
-      - run: uv run --directory apps/api python -m spacy download en_core_web_sm-3.7.1 --direct
+      - run: uv pip install --python .venv/bin/python https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1-py3-none-any.whl
       - run: uv run --directory apps/api pytest -v
 
   test-mcp:
@@ -38,7 +38,7 @@ jobs:
       - uses: astral-sh/setup-uv@v5
       - run: uv python install 3.12
       - run: uv sync --directory apps/mcp_servers/${{ matrix.app }}
-      - run: uv run --directory apps/mcp_servers/${{ matrix.app }} pytest tests -q
+      - run: uv run --directory apps/mcp_servers/${{ matrix.app }} --with pytest pytest tests -q
 
   build-images:
     runs-on: ubuntu-latest

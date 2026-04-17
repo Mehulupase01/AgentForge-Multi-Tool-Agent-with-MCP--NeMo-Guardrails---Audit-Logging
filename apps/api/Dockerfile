@@ -3,6 +3,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends build-essential && rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir uv==0.5.11
 COPY pyproject.toml uv.lock /app/
+COPY README.md /app/README.md
 COPY apps/api/pyproject.toml /app/apps/api/pyproject.toml
 COPY apps/api/src /app/apps/api/src
 COPY apps/api/alembic /app/apps/api/alembic
@@ -14,6 +15,7 @@ FROM python:3.12-slim
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /app/.venv /app/.venv
+COPY README.md /app/README.md
 COPY apps/api/src /app/apps/api/src
 COPY apps/api/alembic /app/apps/api/alembic
 COPY apps/api/alembic.ini /app/apps/api/alembic.ini
