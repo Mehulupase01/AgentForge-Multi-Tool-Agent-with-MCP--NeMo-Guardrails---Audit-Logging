@@ -17,7 +17,6 @@ from agentforge.guardrails.tool_allowlist import ToolAllowlist
 from agentforge.main import create_app
 from agentforge.models.approval import Approval, ApprovalDecision, RiskLevel
 from agentforge.models.audit_event import AuditEvent
-from agentforge.models.task import Task
 from agentforge.models.task_step import StepStatus, StepType, TaskStep
 from agentforge.routers.tasks import orchestrator_dependency
 from agentforge.services.agent_orchestrator import AgentOrchestrator

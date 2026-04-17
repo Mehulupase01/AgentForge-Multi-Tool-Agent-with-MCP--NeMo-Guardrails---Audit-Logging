@@ -6,7 +6,11 @@ build-backend = "hatchling.build"
 name = "sqlite-query-mcp"
 version = "0.1.0"
 description = "AgentForge MCP SQLite query sidecar"
+readme = "../../../README.md"
 requires-python = "==3.12.*"
+license = { text = "MIT" }
+authors = [{ name = "Mehul Upase" }]
+urls = { repository = "https://github.com/Mehulupase01/AgentForge-Multi-Tool-Agent-with-MCP--NeMo-Guardrails---Audit-Logging" }
 dependencies = [
   "mcp==1.27.0",
   "pydantic==2.11.0",

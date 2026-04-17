@@ -126,3 +126,16 @@
   Result: passed. A local uvicorn harness with the existing mock orchestrator stack served the API on an ephemeral port; `agentforge session new`, `agentforge task run "Find transformer content and summarize it."`, and `agentforge audit verify` all completed successfully against that server.
 - Headless Streamlit boot
   Result: passed. `streamlit run apps/ui/src/agentforge_ui/app.py --server.headless=true` served HTTP `200` on an ephemeral local port when pointed at the same mock-backed API harness.
+
+## 2026-04-17 - Phase 10 Hardening And Release
+
+- `uvx ruff check apps`
+  Result: passed. All application packages, tests, and client code are lint-clean after the final release hardening sweep.
+- `python -m pytest tests -q`
+  Result: passed from `apps/api` with `PYTHONPATH=src`. The full API test suite finished `52 passed`, covering health, sessions, audit, corpus, MCP integration, orchestrator, guardrails, approvals, red-team, and SSE compatibility.
+- `python -m pytest apps/mcp_servers/file_search/tests apps/mcp_servers/web_fetch/tests apps/mcp_servers/sqlite_query/tests apps/mcp_servers/github/tests apps/ui/tests/test_imports.py -q`
+  Result: passed. `10/10` non-API package tests green across all four sidecars plus the Streamlit import smoke.
+- Copied-working-tree release smoke
+  Result: passed. A clean temp copy of the current working tree was created without `.git`, `.venv`, or the local-only blueprint files; `.env` was created from `.env.example`; a fresh SQLite URL `sqlite+aiosqlite:///./release_smoke.sqlite` was used; then `uv sync --directory apps/api`, `alembic upgrade head`, corpus generation, synthetic DB generation, corpus ingestion, and `pytest tests/test_health.py tests/test_corpus.py -q` all succeeded with `10/10` tests green.
+- Docker compose full-stack startup
+  Result: intentionally skipped on this host by explicit user instruction. Docker Desktop and Bitdefender remain broken locally, so Phase 10 release verification relies on host-side checks instead of container startup on this machine.

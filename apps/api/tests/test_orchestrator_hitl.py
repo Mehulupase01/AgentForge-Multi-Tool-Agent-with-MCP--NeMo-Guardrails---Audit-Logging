@@ -1,6 +1,6 @@
-from __future__ import annotations
+# ruff: noqa: F401, F811
 
-import asyncio
+from __future__ import annotations
 
 from httpx import AsyncClient
 

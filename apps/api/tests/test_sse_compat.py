@@ -77,6 +77,15 @@ def run_server(app, *, host: str = "127.0.0.1", port: int) -> Iterator[str]:
         AppStatus.should_exit_event = None
 
 
+@pytest_asyncio.fixture(autouse=True)
+async def reset_sse_app_status():
+    AppStatus.should_exit = False
+    AppStatus.should_exit_event = None
+    yield
+    AppStatus.should_exit = False
+    AppStatus.should_exit_event = None
+
+
 @pytest_asyncio.fixture
 async def sse_orchestrator(session_factory, tmp_path: Path) -> AgentOrchestrator:
     event_bus = TaskEventBus()

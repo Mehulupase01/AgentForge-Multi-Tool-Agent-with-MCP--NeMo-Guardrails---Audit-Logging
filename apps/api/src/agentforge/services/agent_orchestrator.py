@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from agentforge.config import settings
 from agentforge.guardrails.runner import GuardrailsRunner
-from agentforge.models.approval import ApprovalDecision, RiskLevel
+from agentforge.models.approval import ApprovalDecision
 from agentforge.models.llm_call import LLMCall
 from agentforge.models.task import Task, TaskStatus
 from agentforge.models.task_step import StepStatus, StepType, TaskStep

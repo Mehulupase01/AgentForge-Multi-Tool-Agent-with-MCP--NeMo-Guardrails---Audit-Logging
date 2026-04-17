@@ -134,3 +134,12 @@ Phase 8 establishes the persisted red-team run/result model, the adversarial sce
 ## Phase 9 Scope
 
 Phase 9 establishes the standalone Streamlit UI package, the standalone CLI package, SSE compatibility coverage, and the operator-facing flows that sit on top of the previously completed API surface.
+
+## Release Surface
+
+- The repo now includes a public release layer: `AGENTS.md`, `LICENSE`, `CONTRIBUTING.md`, `CHANGELOG.md`, `docs/deployment.md`, a flagship `README.md`, `ops/docker/compose.full.yml`, and the root `docker-compose.yml`.
+- GitHub Actions workflows are mirrored into `.github/workflows/ci.yml` and `.github/workflows/redteam.yml` so the repository's CI and safety gates execute on GitHub itself, while the `ops/github/workflows/` copies preserve the blueprint's documented file layout.
+
+## Phase 10 Scope
+
+Phase 10 establishes the hardening and release layer: real release documentation, public capability boundaries, full-stack compose definitions, live GitHub Actions workflow entrypoints, and a clean-working-tree quickstart smoke that verifies the host setup path from scratch without relying on prior local state.

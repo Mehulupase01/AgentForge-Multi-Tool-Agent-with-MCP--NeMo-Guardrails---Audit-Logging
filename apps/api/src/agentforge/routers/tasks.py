@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
 
 from agentforge.database import get_db, get_session_factory
-from agentforge.guardrails import GuardrailBlocked, GuardrailsRunner, get_guardrails_runner
+from agentforge.guardrails import GuardrailsRunner, get_guardrails_runner
 from agentforge.models.session import Session
 from agentforge.models.task import Task, TaskStatus
 from agentforge.models.task_step import StepStatus, StepType, TaskStep

@@ -6,7 +6,11 @@ build-backend = "hatchling.build"
 name = "agentforge-api"
 version = "0.1.0"
 description = "AgentForge API control plane"
+readme = "../../README.md"
 requires-python = "==3.12.*"
+license = { text = "MIT" }
+authors = [{ name = "Mehul Upase" }]
+urls = { repository = "https://github.com/Mehulupase01/AgentForge-Multi-Tool-Agent-with-MCP--NeMo-Guardrails---Audit-Logging" }
 dependencies = [
   "fastapi==0.115.5",
   "uvicorn[standard]==0.32.1",

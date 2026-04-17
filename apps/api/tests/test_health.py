@@ -17,8 +17,8 @@ async def test_liveness(client: AsyncClient) -> None:
 async def test_readiness_db_up(client: AsyncClient) -> None:
     response = await client.get("/api/v1/health/readiness")
 
-    assert response.status_code == 503
-    assert response.json()["status"] == "degraded"
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
     assert response.json()["database"] == "ok"
 
 

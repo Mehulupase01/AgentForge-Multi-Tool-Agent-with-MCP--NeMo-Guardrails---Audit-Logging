@@ -89,6 +89,27 @@ uv pip install --python .\.venv\Scripts\python.exe streamlit==1.41.1 pandas==2.2
 $env:PYTHONPATH='D:\Mehul-Projects\AgentForge- Multi-Tool Agent with MCP, NeMo Guardrails & Audit Logging\apps\api\src'; $env:DEBUG='false'; .\.venv\Scripts\python.exe -m pytest apps/api/tests/test_sse_compat.py apps/ui/tests/test_imports.py -v
 ```
 
+### Phase 10 verified
+
+```powershell
+uvx ruff check apps
+$env:PYTHONPATH='src'; ..\..\.venv\Scripts\python.exe -m pytest tests -q
+.\.venv\Scripts\python.exe -m pytest apps/mcp_servers/file_search/tests apps/mcp_servers/web_fetch/tests apps/mcp_servers/sqlite_query/tests apps/mcp_servers/github/tests apps/ui/tests/test_imports.py -q
+```
+
+Fresh working-tree smoke used a copied clean temp checkout plus a fresh SQLite URL:
+
+```powershell
+copy .env.example .env
+uv sync --directory apps/api
+$env:DATABASE_URL='sqlite+aiosqlite:///./release_smoke.sqlite'
+uv run --directory apps/api alembic upgrade head
+uv run --directory apps/api python -m agentforge.tools.generate_corpus
+uv run --directory apps/api agentforge seed-synthetic --output fixtures/synthetic.sqlite
+uv run --directory apps/api agentforge ingest-corpus
+uv run --directory apps/api pytest tests/test_health.py tests/test_corpus.py -q
+```
+
 ### Verification Notes
 
 - Host verification used Python `3.12.10` provisioned by `uv`, matching the blueprint's Python 3.12 runtime requirement despite the machine also having Python 3.13 installed.
@@ -109,6 +130,9 @@ $env:PYTHONPATH='D:\Mehul-Projects\AgentForge- Multi-Tool Agent with MCP, NeMo G
 - Phase 8 local verification used host-launched MCP sidecars on ports `8101` through `8104`, but the final 50-scenario suite was intentionally fully adversarial and guardrail-blocked at task intake so it stayed stable under OpenRouter free-tier daily request limits.
 - The benign PII-redaction path remains covered by the dedicated Phase 6 guardrail suites; Phase 8 now focuses purely on adversarial prompt injection, exfiltration, jailbreak, tool-abuse, goal-hijack, and PII leak attempts.
 - Phase 9 local verification used a mock-backed host API harness for the CLI streaming and audit commands because the real-model path is currently quota-limited on this OpenRouter free-tier key. The UI itself was also verified headlessly by serving Streamlit and confirming HTTP `200` from the home page.
+- Phase 10 adds real GitHub Actions workflows under `.github/workflows` while keeping the blueprint-shaped copies under `ops/github/workflows`. GitHub only executes workflows from the root `.github/workflows` path, so both locations are intentionally kept in sync.
+- Phase 10 local release verification uses a copied clean working tree plus a fresh SQLite URL for the quickstart smoke. A plain local `git clone` was not sufficient before commit because it only reflected committed history and would miss the current release edits.
+- Docker verification remains intentionally skipped on this host by explicit user instruction. Phase 10 therefore closes on host-side lint, host-side full pytest coverage, host-side sidecar/UI suites, and a copied-working-tree quickstart smoke instead of container startup on this machine.
 
 ## Active Decisions
 
@@ -127,6 +151,7 @@ $env:PYTHONPATH='D:\Mehul-Projects\AgentForge- Multi-Tool Agent with MCP, NeMo G
 - OpenRouter is the primary live-model path. The default model is `openrouter/free`, and planner requests enforce structured JSON output plus `require_parameters=true` so the free router selects only providers that support the JSON plan contract.
 - `file_search.search_corpus` now applies a lightweight singular/plural term expansion so natural operator queries like `transformers` still match fixture documents containing `transformer`.
 - Guardrails are enforced deterministically in Python through `GuardrailsRunner`, with Presidio-backed PII detection, injection heuristics, topic gating, output redaction, and a YAML-backed MCP tool allowlist.
+- Phase 10 hardening adds the public release surface: `AGENTS.md`, `LICENSE`, `CONTRIBUTING.md`, `CHANGELOG.md`, `docs/deployment.md`, the full stack compose definition, a flagship README, and real GitHub Actions workflow entrypoints.
 
 ## Current Execution Truth
 
@@ -140,7 +165,7 @@ $env:PYTHONPATH='D:\Mehul-Projects\AgentForge- Multi-Tool Agent with MCP, NeMo G
 - Phase 7 (Human-in-the-Loop Approval): complete and verified
 - Phase 8 (Red-Team Test Suite): complete and verified
 - Phase 9 (Streamlit UI + CLI): complete and verified
-- Phase 10 (Hardening & Release): not started
+- Phase 10 (Hardening & Release): complete and verified locally, with Docker verification explicitly waived on this host by user instruction
 
 ## Update Rule
 

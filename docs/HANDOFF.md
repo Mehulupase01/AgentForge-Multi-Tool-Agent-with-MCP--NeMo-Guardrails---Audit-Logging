@@ -8,11 +8,12 @@
 - Phase 7 is complete and verified locally.
 - Phase 8 is complete and verified locally.
 - Phase 9 is complete and verified locally.
-- The repo now includes the Phase 1 foundation, the Phase 2 audit core, the Phase 3 corpus/synthetic-data layer, the Phase 4 MCP server stack, the Phase 5 orchestrator layer, the Phase 6 guardrails layer, the Phase 7 HITL layer, the Phase 8 red-team layer, and the Phase 9 operator interfaces: Streamlit UI pages, a standalone CLI package, SSE compatibility coverage, and headless import/stream verification.
+- Phase 10 is complete and verified locally.
+- The repo now includes the Phase 1 foundation, the Phase 2 audit core, the Phase 3 corpus/synthetic-data layer, the Phase 4 MCP server stack, the Phase 5 orchestrator layer, the Phase 6 guardrails layer, the Phase 7 HITL layer, the Phase 8 red-team layer, the Phase 9 operator interfaces, and the Phase 10 release surface: flagship README, AGENTS.md, deployment guide, contribution/changelog/license docs, full-stack compose files, and real GitHub Actions workflow entrypoints under `.github/workflows`.
 
 ## Next Phase
 
-- Phase 10: Hardening & Release
+- No unfinished blueprint phases remain.
 
 ## Resume Notes
 
@@ -60,4 +61,12 @@
   - `python -m pytest apps/api/tests/test_sse_compat.py apps/ui/tests/test_imports.py -v`
   - a local mock-backed host verification harness where `agentforge session new`, `agentforge task run "Find transformer content and summarize it."`, and `agentforge audit verify` all succeeded, and a headless Streamlit boot returned HTTP `200`
 - The CLI package is now separate from the API package and talks to the FastAPI control plane over HTTP exactly as the blueprint intended. The API package still keeps its internal maintenance CLI for Phase 3 and Phase 8 operator utilities.
+- Phase 10 adds `AGENTS.md`, `LICENSE`, `CONTRIBUTING.md`, `CHANGELOG.md`, `docs/deployment.md`, `ops/docker/compose.full.yml`, the root `docker-compose.yml`, and mirrored GitHub Actions workflows in both `ops/github/workflows/` and `.github/workflows/`.
+- GitHub Actions only executes workflows under `.github/workflows`, so the new root workflow copies are the live CI entrypoints while the `ops/github/workflows/` copies preserve the blueprint's repo shape.
+- Phase 10 verification passed with:
+  - `uvx ruff check apps`
+  - `python -m pytest tests -q` from `apps/api` with `PYTHONPATH=src`
+  - `python -m pytest apps/mcp_servers/file_search/tests apps/mcp_servers/web_fetch/tests apps/mcp_servers/sqlite_query/tests apps/mcp_servers/github/tests apps/ui/tests/test_imports.py -q`
+  - a copied-working-tree quickstart smoke using a fresh SQLite URL, `uv sync`, `alembic upgrade head`, corpus generation, synthetic DB generation, corpus ingestion, and `pytest tests/test_health.py tests/test_corpus.py -q`
+- Docker verification remains intentionally skipped on this host by explicit user instruction because the local Docker Desktop and Bitdefender environment are still broken.
 - The only intentional untracked files are the local blueprint artifacts kept out of git by user instruction.

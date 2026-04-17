@@ -9,3 +9,4 @@
 - 2026-04-17: Phase 7 (Human-in-the-Loop Approval) completed and verified locally, including approval APIs, persisted LangGraph checkpoints, resume flow coverage, and orchestrator regressions.
 - 2026-04-17: Phase 8 (Red-Team Test Suite) completed and verified locally, including redteam run/result persistence, `agentforge redteam-run`, the 50-scenario adversarial suite, JUnit report output, and CI gating.
 - 2026-04-17: Phase 9 (Streamlit UI + CLI) completed and verified locally, including the standalone CLI package, Streamlit UI pages, SSE compatibility coverage, and a mock-backed host operator flow check.
+- 2026-04-17: Phase 10 (Hardening & Release) completed and verified locally, including the flagship README, AGENTS.md, license/contribution/changelog docs, full-stack compose files, real GitHub Actions workflow entrypoints, and a copied-working-tree quickstart smoke. Docker verification on this host remained explicitly waived by user instruction.
