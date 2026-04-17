@@ -11,6 +11,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from agentforge.guardrails.runner import GuardrailsRunner
 from agentforge.models.llm_call import LLMCall
 from agentforge.models.task import Task, TaskStatus
 from agentforge.models.task_step import StepStatus, StepType, TaskStep
@@ -25,6 +26,7 @@ from agentforge.services.task_event_bus import TaskEventBus
 class AgentState(TypedDict, total=False):
     task_id: str
     user_prompt: str
+    input_rails: dict[str, Any] | None
     plan: list[dict[str, Any]] | None
     cursor: int
     last_output: dict[str, Any] | None
@@ -42,14 +44,17 @@ class AgentOrchestrator:
         mcp_pool: MCPClientPool,
         llm_provider: LLMProvider,
         event_bus: TaskEventBus,
+        guardrails_runner: GuardrailsRunner,
         audit_service: AuditService | None = None,
     ) -> None:
         self._session_factory = session_factory
         self._mcp_pool = mcp_pool
         self._llm_provider = llm_provider
         self._event_bus = event_bus
+        self._guardrails_runner = guardrails_runner
         self._audit_service = audit_service or AuditService()
         self._tasks: dict[str, asyncio.Task[None]] = {}
+        self._pending_inputs: dict[str, dict[str, Any]] = {}
         self._graph = self._build_graph()
 
     def _build_graph(self):
@@ -77,13 +82,15 @@ class AgentOrchestrator:
 
         return graph.compile(checkpointer=MemorySaver())
 
-    def start_task(self, task_id: UUID) -> None:
+    def start_task(self, task_id: UUID, *, input_rails: dict[str, Any] | None = None) -> None:
         task_key = str(task_id)
         if task_key in self._tasks and not self._tasks[task_key].done():
             return
+        if input_rails is not None:
+            self._pending_inputs[task_key] = input_rails
         background = asyncio.create_task(self._run_task(task_key))
         self._tasks[task_key] = background
-        background.add_done_callback(lambda _: self._tasks.pop(task_key, None))
+        background.add_done_callback(lambda _: (self._tasks.pop(task_key, None), self._pending_inputs.pop(task_key, None)))
 
     async def close(self) -> None:
         pending = [task for task in self._tasks.values() if not task.done()]
@@ -100,6 +107,7 @@ class AgentOrchestrator:
             if task is None:
                 return
             user_prompt = task.user_prompt
+            input_rails = self._pending_inputs.pop(task_id, {"pii": {"redacted": False, "entities": []}})
 
         initial_state: AgentState = {
             "task_id": task_id,
@@ -109,6 +117,7 @@ class AgentOrchestrator:
             "last_output": None,
             "final_response": None,
             "error": None,
+            "input_rails": input_rails,
         }
         try:
             await self._graph.ainvoke(initial_state, config={"configurable": {"thread_id": task_id}})
@@ -133,6 +142,7 @@ class AgentOrchestrator:
                     model=self._llm_provider.model_name,
                     prompt=state["user_prompt"],
                     completion=response.text,
+                    input_rails_json=state.get("input_rails"),
                     prompt_tokens=response.prompt_tokens,
                     completion_tokens=response.completion_tokens,
                     latency_ms=response.latency_ms,
@@ -174,6 +184,22 @@ class AgentOrchestrator:
         started = perf_counter()
         try:
             if step.type == "tool_call":
+                tool_check = self._guardrails_runner.check_tool(step.server or "", step.tool or "")
+                if not tool_check.allowed:
+                    return {
+                        **state,
+                        "current_result": {
+                            "status": StepStatus.SKIPPED.value,
+                            "kind": "guardrail_block",
+                            "output": {"message": tool_check.reason},
+                            "input": {"server": step.server, "tool": step.tool, "args": step.args},
+                            "guardrail": {
+                                "event_type": "guardrail.tool_disallowed",
+                                "detail": tool_check.detail,
+                            },
+                            "duration_ms": int((perf_counter() - started) * 1000),
+                        },
+                    }
                 result = await self._mcp_pool.call_tool(step.server or "", step.tool or "", step.args)
                 return {
                     **state,
@@ -196,18 +222,20 @@ class AgentOrchestrator:
                     ensure_ascii=True,
                 )
                 llm_response = await self._llm_provider.reason_step(prompt_payload)
+                processed_output = self._guardrails_runner.process_output(llm_response.text)
                 return {
                     **state,
                     "current_result": {
                         "status": StepStatus.COMPLETED.value,
                         "kind": "llm_reasoning",
-                        "output": {"text": llm_response.text},
+                        "output": {"text": processed_output.text},
                         "input": {"prompt": prompt_payload},
                         "llm": {
-                            "text": llm_response.text,
+                            "text": processed_output.text,
                             "prompt_tokens": llm_response.prompt_tokens,
                             "completion_tokens": llm_response.completion_tokens,
                             "latency_ms": llm_response.latency_ms,
+                            "output_rails_json": processed_output.output_rails_json(),
                         },
                         "duration_ms": int((perf_counter() - started) * 1000),
                     },
@@ -249,8 +277,8 @@ class AgentOrchestrator:
             task_step = TaskStep(
                 task_id=task.id,
                 ordinal=state.get("cursor", 0) + 1,
-                step_type=self._step_type_for(step.type),
-                description=step.description,
+                step_type=self._step_type_for(result.get("kind") or step.type),
+                description=result.get("output", {}).get("message", step.description) if result.get("kind") == "guardrail_block" else step.description,
                 status=StepStatus(result["status"]),
                 input_json=result.get("input"),
                 output_json=result.get("output"),
@@ -284,10 +312,30 @@ class AgentOrchestrator:
                         model=self._llm_provider.model_name,
                         prompt=result["input"]["prompt"],
                         completion=llm_response["text"],
+                        output_rails_json=llm_response.get("output_rails_json"),
                         prompt_tokens=llm_response["prompt_tokens"],
                         completion_tokens=llm_response["completion_tokens"],
                         latency_ms=llm_response["latency_ms"],
                     ),
+                )
+                if llm_response.get("output_rails_json", {}).get("pii", {}).get("redacted"):
+                    await self._audit_service.record_guardrail_event(
+                        session,
+                        event_type="guardrail.output_blocked",
+                        payload={"task_id": state["task_id"], "step_id": step.step_id},
+                        session_id=task.session_id,
+                        task_id=task.id,
+                        commit=False,
+                    )
+            elif result.get("kind") == "guardrail_block":
+                guardrail_event = result.get("guardrail", {})
+                await self._audit_service.record_guardrail_event(
+                    session,
+                    event_type=guardrail_event.get("event_type", "guardrail.tool_disallowed"),
+                    payload={"task_id": state["task_id"], "step_id": step.step_id, **guardrail_event.get("detail", {})},
+                    session_id=task.session_id,
+                    task_id=task.id,
+                    commit=False,
                 )
 
             if result["status"] == StepStatus.FAILED.value:
@@ -405,6 +453,7 @@ class AgentOrchestrator:
             "tool_call": StepType.TOOL_CALL,
             "llm_reasoning": StepType.LLM_REASONING,
             "approval_gate": StepType.APPROVAL_GATE,
+            "guardrail_block": StepType.GUARDRAIL_BLOCK,
         }
         return mapping.get(step_type, StepType.LLM_REASONING)
 
@@ -448,6 +497,7 @@ def get_agent_orchestrator(
     mcp_pool: MCPClientPool,
     llm_provider: LLMProvider,
     event_bus: TaskEventBus,
+    guardrails_runner: GuardrailsRunner,
 ) -> AgentOrchestrator:
     global _agent_orchestrator
     if _agent_orchestrator is None:
@@ -456,5 +506,6 @@ def get_agent_orchestrator(
             mcp_pool=mcp_pool,
             llm_provider=llm_provider,
             event_bus=event_bus,
+            guardrails_runner=guardrails_runner,
         )
     return _agent_orchestrator

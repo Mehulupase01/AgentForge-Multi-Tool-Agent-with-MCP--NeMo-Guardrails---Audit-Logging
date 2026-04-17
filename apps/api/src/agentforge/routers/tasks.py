@@ -10,9 +10,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
 
 from agentforge.database import get_db, get_session_factory
+from agentforge.guardrails import GuardrailBlocked, GuardrailsRunner, get_guardrails_runner
 from agentforge.models.session import Session
 from agentforge.models.task import Task, TaskStatus
-from agentforge.models.task_step import TaskStep
+from agentforge.models.task_step import StepStatus, StepType, TaskStep
 from agentforge.schemas.common import Envelope, Pagination
 from agentforge.schemas.task import TaskCreate, TaskResponse, TaskStepResponse
 from agentforge.services.agent_orchestrator import AgentOrchestrator, get_agent_orchestrator
@@ -87,12 +88,14 @@ def orchestrator_dependency(
     mcp_pool: Annotated[MCPClientPool, Depends(get_mcp_client_pool)],
     llm_provider: Annotated[LLMProvider, Depends(get_llm_provider)],
     event_bus: Annotated[TaskEventBus, Depends(get_task_event_bus)],
+    guardrails_runner: Annotated[GuardrailsRunner, Depends(get_guardrails_runner)],
 ) -> AgentOrchestrator:
     return get_agent_orchestrator(
         session_factory=get_session_factory(),
         mcp_pool=mcp_pool,
         llm_provider=llm_provider,
         event_bus=event_bus,
+        guardrails_runner=guardrails_runner,
     )
 
 
@@ -103,11 +106,71 @@ async def create_task(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     orchestrator: Annotated[AgentOrchestrator, Depends(orchestrator_dependency)],
+    guardrails_runner: Annotated[GuardrailsRunner, Depends(get_guardrails_runner)],
 ) -> TaskResponse:
     session = await require_session(db, session_id)
+    processed_input = guardrails_runner.process_input(body.user_prompt)
+    if processed_input.pii.get("redacted"):
+        await audit_service.record_guardrail_event(
+            db,
+            event_type="guardrail.pii_redacted",
+            payload={"session_id": str(session_id), "entities": processed_input.pii["entities"]},
+            session_id=session.id,
+            commit=False,
+        )
+    if processed_input.injection.get("blocked"):
+        await audit_service.record_guardrail_event(
+            db,
+            event_type="guardrail.injection_detected",
+            payload={"session_id": str(session_id), "matched_patterns": processed_input.injection["matched_patterns"]},
+            session_id=session.id,
+            commit=False,
+        )
+    if processed_input.blocked:
+        task = Task(
+            session_id=session.id,
+            user_prompt=processed_input.text,
+            status=TaskStatus.REJECTED,
+            error=processed_input.reason,
+        )
+        db.add(task)
+        await db.flush()
+        db.add(
+            TaskStep(
+                task_id=task.id,
+                ordinal=1,
+                step_type=StepType.GUARDRAIL_BLOCK,
+                description=processed_input.reason or "Input blocked by guardrails",
+                status=StepStatus.FAILED,
+                input_json={"prompt": processed_input.original_text},
+                output_json=processed_input.input_rails_json(),
+            ),
+        )
+        await audit_service.record_guardrail_event(
+            db,
+            event_type="guardrail.input_blocked",
+            payload={
+                "task_id": str(task.id),
+                "session_id": str(session_id),
+                "reason": processed_input.reason,
+            },
+            session_id=session.id,
+            task_id=task.id,
+            commit=False,
+        )
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "GUARDRAIL_BLOCKED",
+                "message": processed_input.reason or "Input blocked by guardrails",
+                "detail": {"task_id": str(task.id), "session_id": str(session.id)},
+            },
+        )
+
     task = Task(
         session_id=session.id,
-        user_prompt=body.user_prompt,
+        user_prompt=processed_input.text,
         status=TaskStatus.PLANNING,
     )
     db.add(task)
@@ -127,7 +190,7 @@ async def create_task(
         task_id=task.id,
     )
 
-    orchestrator.start_task(task.id)
+    orchestrator.start_task(task.id, input_rails=processed_input.input_rails_json())
     return to_task_response(task)
 
 

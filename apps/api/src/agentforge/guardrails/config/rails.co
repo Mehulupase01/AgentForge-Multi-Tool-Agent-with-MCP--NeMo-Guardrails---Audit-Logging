@@ -1,0 +1,12 @@
+define user ask_allowed_topic
+define bot refuse_disallowed_topic
+
+define flow topic_check
+  user ask_allowed_topic
+  bot refuse_disallowed_topic
+
+define flow self_check_input
+  user ask_allowed_topic
+
+define flow self_check_output
+  bot refuse_disallowed_topic

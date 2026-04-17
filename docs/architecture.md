@@ -84,3 +84,15 @@ Phase 4 establishes the four MCP sidecars, the API-side MCP discovery/dispatch l
 ## Phase 5 Scope
 
 Phase 5 establishes the orchestrator state machine, task persistence APIs, real-time task streaming, persisted tool and LLM call records, and the live model-backed execution path that Phase 6 guardrails will wrap.
+
+## Guardrails Layer
+
+- `GuardrailsRunner` now sits at task intake and inside the orchestrator execution loop.
+- Input processing performs PII redaction, prompt-injection detection, and topic gating before tasks are accepted.
+- Tool execution is checked against `guardrails/config/tool_allowlist.yml`.
+- LLM reasoning output is redacted before it is persisted or exposed as the task's final response.
+- Guardrail blocks are persisted as `task_steps` with `step_type=guardrail_block`, and matching `guardrail.*` events are added to the audit chain.
+
+## Phase 6 Scope
+
+Phase 6 establishes the safety rails around task intake, tool execution, and LLM output handling, while keeping the Phase 5 orchestration APIs and persistence model intact for the later approval and red-team phases.

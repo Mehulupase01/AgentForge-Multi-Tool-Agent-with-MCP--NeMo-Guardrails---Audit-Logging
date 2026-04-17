@@ -1,0 +1,16 @@
+allowlist:
+  file_search:
+    - search_corpus
+    - read_document
+  web_fetch:
+    - fetch_url
+    - hacker_news_top
+    - weather_for
+  sqlite_query:
+    - list_employees
+    - list_projects
+    - run_select
+  github:
+    - list_user_repos
+    - search_issues
+    - get_repo

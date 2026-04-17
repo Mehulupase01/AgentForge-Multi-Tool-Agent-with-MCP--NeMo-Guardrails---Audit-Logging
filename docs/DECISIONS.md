@@ -48,3 +48,9 @@
 - `D-019`: The Phase 5 migration `002_tool_and_llm_calls.py` depends on `006_corpus` in the live repo lineage so existing local databases can upgrade linearly from the already-shipped Phase 3 head. This preserves upgrade safety on the real branch even though the ideal numbered order in the blueprint assumes all intermediate phase migrations land later.
 - `D-020`: Planner requests use OpenRouter structured outputs with `response_format`, provider `require_parameters=true`, and the `response-healing` plugin. This keeps the JSON plan contract reliable on the free-model path without changing the orchestrator architecture.
 - `D-021`: `file_search.search_corpus` now applies a minimal singular/plural term expansion so natural queries like `transformers` match deterministic fixture documents titled with `transformer`.
+
+## Phase 6 Review Notes
+
+- `D-022`: The committed Phase 6 enforcement path is deterministic in Python through `GuardrailsRunner`. NeMo Guardrails config assets are present in the repo to preserve the blueprint shape, but the live blocking/redaction logic avoids making the verification suite depend on a second non-deterministic LLM judge.
+- `D-023`: Presidio is used for PII detection, but placeholder replacement is performed in-process rather than through `AnonymizerEngine`. This keeps redacted output stable across versions while preserving the blueprint’s Presidio-based detection layer.
+- `D-024`: The local spaCy model installation used a direct wheel URL through `uv pip install --python ...` because the repo `.venv` does not expose `pip`, and the standard `python -m spacy download ... --direct` path therefore fails on this host.

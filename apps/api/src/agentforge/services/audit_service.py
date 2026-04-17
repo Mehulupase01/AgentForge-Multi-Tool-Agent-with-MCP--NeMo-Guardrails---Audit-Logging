@@ -79,7 +79,6 @@ class AuditService:
 
             if commit:
                 await session.commit()
-                await session.refresh(event)
             else:
                 await session.flush()
 
@@ -134,3 +133,23 @@ class AuditService:
             "expected_chain_hash": None,
             "actual_chain_hash": None,
         }
+
+    async def record_guardrail_event(
+        self,
+        session: AsyncSession,
+        *,
+        event_type: str,
+        payload: dict,
+        session_id: UUID | None = None,
+        task_id: UUID | None = None,
+        commit: bool = True,
+    ) -> AuditEvent:
+        return await self.record_event(
+            session,
+            event_type=event_type,
+            actor="guardrail",
+            payload=payload,
+            session_id=session_id,
+            task_id=task_id,
+            commit=commit,
+        )

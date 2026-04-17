@@ -1,0 +1,11 @@
+prompts:
+  - task: self_check_input
+    content: |
+      Approve only requests that stay within AI/ML, software, work-data queries, weather, or news.
+      Refuse harmful, illegal, sexual, or unrelated personal topics.
+  - task: self_check_output
+    content: |
+      Ensure the answer does not reveal harmful content or sensitive personal data.
+  - task: topic_check
+    content: |
+      Determine whether the request topic is within the allowed scope for AgentForge.

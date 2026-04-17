@@ -4,11 +4,12 @@
 
 - Phase 4 is complete and verified locally.
 - Phase 5 is complete and verified locally.
-- The repo now includes the Phase 1 foundation, the Phase 2 audit core, the Phase 3 corpus/synthetic-data layer, the Phase 4 MCP server stack, and the Phase 5 orchestrator layer: LangGraph task execution, task/task-step/tool-call/llm-call persistence, SSE task streaming, the task API surface, and a live OpenRouter-backed smoke path.
+- Phase 6 is complete and verified locally.
+- The repo now includes the Phase 1 foundation, the Phase 2 audit core, the Phase 3 corpus/synthetic-data layer, the Phase 4 MCP server stack, the Phase 5 orchestrator layer, and the Phase 6 guardrails layer: deterministic guardrail enforcement, PII redaction, injection blocking, topic gating, tool allowlists, guardrail audit events, and guardrail-aware orchestrator tests.
 
 ## Next Phase
 
-- Phase 6: Guardrails Layer
+- Phase 7: Human-in-the-Loop Approval
 
 ## Resume Notes
 
@@ -33,4 +34,8 @@
   - `python -m pytest apps/api/tests/test_health.py apps/api/tests/test_mcp_client_pool.py apps/api/tests/test_agent_orchestrator.py -q`
   - a live host-side smoke run on port `8014` with all four sidecars plus the API, using OpenRouter and the prompt `Find 3 articles about transformers in the corpus and summarize them.`
 - The successful live smoke completed with a non-empty `final_response` summarizing `01-transformer-architectures-in-practice.md`.
+- Phase 6 verification passed with:
+  - a local equivalent of the blueprint spaCy install step using `uv pip install --python .venv\\Scripts\\python.exe <en_core_web_sm wheel URL>` because the repo `.venv` does not expose `pip`
+  - `python -m pytest apps/api/tests/test_guardrails_pii.py apps/api/tests/test_guardrails_injection.py apps/api/tests/test_guardrails_topic.py apps/api/tests/test_guardrails_tool_allowlist.py apps/api/tests/test_agent_orchestrator.py -q`
+- The guardrails layer now returns `400 GUARDRAIL_BLOCKED` for blocked task intake, persists `guardrail_block` task steps, and records the new `guardrail.*` audit events required by the blueprint.
 - The only intentional untracked files are the local blueprint artifacts kept out of git by user instruction.

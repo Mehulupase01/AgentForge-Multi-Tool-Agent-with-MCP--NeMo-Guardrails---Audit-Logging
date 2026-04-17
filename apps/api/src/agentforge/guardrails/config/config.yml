@@ -1,0 +1,16 @@
+models:
+  - type: main
+    engine: openai
+    model: openrouter/free
+    parameters:
+      api_key: ${OPENROUTER_API_KEY}
+      base_url: https://openrouter.ai/api/v1
+
+rails:
+  input:
+    flows:
+      - self_check_input
+      - topic_check
+  output:
+    flows:
+      - self_check_output

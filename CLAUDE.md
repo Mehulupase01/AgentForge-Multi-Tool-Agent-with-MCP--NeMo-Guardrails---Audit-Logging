@@ -59,6 +59,13 @@ $env:PYTHONPATH='src'; .\.venv\Scripts\python.exe -m alembic -c alembic.ini upgr
 .\.venv\Scripts\python.exe -m pytest tests/test_health.py tests/test_mcp_client_pool.py tests/test_agent_orchestrator.py -q
 ```
 
+### Phase 6 verified
+
+```powershell
+uv pip install --python .\.venv\Scripts\python.exe https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1-py3-none-any.whl
+.\.venv\Scripts\python.exe -m pytest tests/test_guardrails_pii.py tests/test_guardrails_injection.py tests/test_guardrails_topic.py tests/test_guardrails_tool_allowlist.py tests/test_agent_orchestrator.py -q
+```
+
 ### Verification Notes
 
 - Host verification used Python `3.12.10` provisioned by `uv`, matching the blueprint's Python 3.12 runtime requirement despite the machine also having Python 3.13 installed.
@@ -73,6 +80,7 @@ $env:PYTHONPATH='src'; .\.venv\Scripts\python.exe -m alembic -c alembic.ini upgr
 - Phase 4 local live verification used port `8013` for the API because host port `8000` remains occupied by an unrelated local FastAPI service on this machine.
 - Docker verification for Phase 4 is intentionally skipped on this host by explicit user instruction because Docker Desktop is currently broken locally and Bitdefender is interfering with some process startup behavior.
 - Phase 5 local live verification used port `8014` for the API because host port `8000` remains occupied by an unrelated local FastAPI service on this machine.
+- The repo `.venv` does not expose `pip`, so the local Phase 6 spaCy model install used a direct `uv pip install --python ... <wheel-url>` invocation instead of `python -m spacy download ... --direct`.
 
 ## Active Decisions
 
@@ -90,6 +98,7 @@ $env:PYTHONPATH='src'; .\.venv\Scripts\python.exe -m alembic -c alembic.ini upgr
 - MCP client connections are short-lived per operation with cached tool metadata. This avoids cross-task shutdown issues seen with long-lived `streamable_http` sessions on this Windows host while preserving the same public API behavior.
 - OpenRouter is the primary live-model path. The default model is `openrouter/free`, and planner requests enforce structured JSON output plus `require_parameters=true` so the free router selects only providers that support the JSON plan contract.
 - `file_search.search_corpus` now applies a lightweight singular/plural term expansion so natural operator queries like `transformers` still match fixture documents containing `transformer`.
+- Guardrails are enforced deterministically in Python through `GuardrailsRunner`, with Presidio-backed PII detection, injection heuristics, topic gating, output redaction, and a YAML-backed MCP tool allowlist.
 
 ## Current Execution Truth
 
@@ -99,7 +108,7 @@ $env:PYTHONPATH='src'; .\.venv\Scripts\python.exe -m alembic -c alembic.ini upgr
 - Phase 3 (Synthetic Data & Corpus): complete and verified
 - Phase 4 (MCP Tool Servers): complete and verified locally, with Docker verification explicitly waived by user instruction on this machine
 - Phase 5 (Agent Orchestrator): complete and verified
-- Phase 6 (Guardrails Layer): not started
+- Phase 6 (Guardrails Layer): complete and verified
 - Phase 7 (Human-in-the-Loop Approval): not started
 - Phase 8 (Red-Team Test Suite): not started
 - Phase 9 (Streamlit UI + CLI): not started

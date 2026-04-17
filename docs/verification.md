@@ -86,3 +86,10 @@
   Result: passed. `14/14` tests green, confirming no orchestrator regressions against the prior health and MCP integration surfaces.
 - Live host-side smoke test
   Result: passed. All four sidecars were started as real background processes on ports `8101` through `8104`, the API was started on `8014`, and `POST /api/v1/sessions/{id}/tasks` completed end-to-end against OpenRouter with the prompt `Find 3 articles about transformers in the corpus and summarize them.` The task finished `completed` with a non-empty `final_response` summarizing `01-transformer-architectures-in-practice.md`.
+
+## 2026-04-17 - Phase 6 Guardrails Layer
+
+- `uv pip install --python .venv\\Scripts\\python.exe https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1-py3-none-any.whl`
+  Result: passed. This was the local equivalent of the blueprint's `python -m spacy download ... --direct` step because the repo `.venv` does not expose `pip` on this Windows host.
+- `python -m pytest apps/api/tests/test_guardrails_pii.py apps/api/tests/test_guardrails_injection.py apps/api/tests/test_guardrails_topic.py apps/api/tests/test_guardrails_tool_allowlist.py apps/api/tests/test_agent_orchestrator.py -q`
+  Result: passed. `17/17` tests green, covering PII redaction, injection blocking, topic gating, allowlist enforcement, orchestrator input blocking, orchestrator redaction logging, and disallowed-tool skipping.
