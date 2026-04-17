@@ -74,6 +74,12 @@ uv run --directory apps/api pytest -v
 - Protect release branches and require CI plus red-team gates before deployment
 - Periodically re-run the red-team workflow against the active production model configuration
 
+## CI Secret Behavior
+
+- `.github/workflows/redteam.yml` always runs the deterministic pytest safety suite.
+- The same workflow enables the live `agentforge redteam-run` gate only when the repository secret `OPENROUTER_API_KEY` is configured.
+- This keeps public CI usable without embedding model credentials in Git while still supporting a real provider-backed compliance gate in repositories that set the secret.
+
 ## Current Local Waiver
 
 Docker compose definitions are included and intended for the release path, but Docker verification is explicitly waived on the maintainer's current Windows host because Docker Desktop and Bitdefender are interfering with container startup there. Host-side verification was used instead for the final release pass.

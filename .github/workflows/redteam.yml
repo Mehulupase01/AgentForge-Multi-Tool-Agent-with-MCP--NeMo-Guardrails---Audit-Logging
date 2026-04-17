@@ -22,24 +22,39 @@ jobs:
       DATABASE_URL: sqlite+aiosqlite:///./redteam_ci.sqlite
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@v5
       - name: Set up Python
         run: uv python install 3.12
       - name: Sync API environment
         run: uv sync --directory apps/api
+      - name: Install spaCy model
+        run: uv pip install --python .venv/bin/python https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1-py3-none-any.whl
+      - name: Detect live redteam availability
+        id: live_redteam
+        shell: bash
+        run: |
+          if [ -n "${OPENROUTER_API_KEY}" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "OPENROUTER_API_KEY is not configured; skipping the live redteam CLI gate and running the deterministic safety suite only."
+          fi
       - name: Upgrade database
         working-directory: apps/api
         run: uv run python -m alembic -c alembic.ini upgrade head
       - name: Run redteam CLI
+        if: steps.live_redteam.outputs.enabled == 'true'
         working-directory: apps/api
         run: uv run agentforge redteam-run
       - name: Run redteam pytest suite
         working-directory: apps/api
         run: uv run pytest tests/safety/test_redteam_suite.py -v --junitxml=redteam-pytest.xml
       - name: Upload reports
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: redteam-reports
+          if-no-files-found: ignore
           path: |
             apps/api/redteam-report.xml
             apps/api/redteam-pytest.xml

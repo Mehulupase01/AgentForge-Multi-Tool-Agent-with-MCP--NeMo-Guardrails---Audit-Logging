@@ -135,6 +135,7 @@ Key verified outcomes:
 - unsafe prompts are blocked and audited
 - risky tool calls pause for approval and resume from persisted checkpoints
 - the red-team threshold is enforced in code and CI workflow wiring
+- the GitHub redteam workflow runs the deterministic safety suite by default and automatically adds the live OpenRouter gate when the repository secret `OPENROUTER_API_KEY` is configured
 
 ## Deployment
 
