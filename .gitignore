@@ -8,3 +8,11 @@ dist/
 .pytest_cache/
 .coverage
 htmlcov/
+BLUEPRINT.md
+BLUEPRINT.pdf
+CLAUDE.md
+docs/
+AGENTS.md
+CHANGELOG.md
+CONTRIBUTING.md
+README.md
