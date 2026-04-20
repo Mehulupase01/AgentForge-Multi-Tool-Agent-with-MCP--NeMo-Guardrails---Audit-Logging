@@ -7,14 +7,17 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from sse_starlette.sse import EventSourceResponse
 
+from agentforge.models.agent_run import AgentRole, AgentRun
 from agentforge.database import get_db, get_session_factory
 from agentforge.guardrails import GuardrailsRunner, get_guardrails_runner
 from agentforge.models.session import Session
 from agentforge.models.task import Task, TaskStatus
 from agentforge.models.task_step import StepStatus, StepType, TaskStep
 from agentforge.schemas.common import Envelope, Pagination
+from agentforge.schemas.agent import AgentRunResponse, AgentRunSummary
 from agentforge.schemas.task import TaskCreate, TaskResponse, TaskStepResponse
 from agentforge.services.agent_orchestrator import AgentOrchestrator, get_agent_orchestrator
 from agentforge.services.approval_service import ApprovalService, get_approval_service
@@ -28,17 +31,35 @@ audit_service = AuditService()
 
 
 def to_task_response(task: Task) -> TaskResponse:
+    agent_runs = list(task.__dict__.get("agent_runs") or [])
+    supervisor_plan = None
+    for agent_run in reversed(agent_runs):
+        if agent_run.role == AgentRole.ORCHESTRATOR and isinstance(agent_run.result_json, dict) and "handoffs" in agent_run.result_json:
+            supervisor_plan = agent_run.result_json
+            break
     return TaskResponse(
         id=task.id,
         session_id=task.session_id,
         user_prompt=task.user_prompt,
         plan=task.plan,
+        supervisor_plan=supervisor_plan,
         status=task.status,
         started_at=task.started_at,
         completed_at=task.completed_at,
         final_response=task.final_response,
         error=task.error,
         checkpoint_id=task.checkpoint_id,
+        agent_runs=[
+            AgentRunSummary(
+                id=agent_run.id,
+                role=agent_run.role,
+                status=agent_run.status,
+                started_at=agent_run.started_at,
+                completed_at=agent_run.completed_at,
+                handoff_reason=agent_run.handoff_reason,
+            )
+            for agent_run in agent_runs
+        ],
     )
 
 
@@ -50,10 +71,29 @@ def to_task_step_response(step: TaskStep) -> TaskStepResponse:
         step_type=step.step_type,
         description=step.description,
         status=step.status,
+        agent_role=step.agent_role,
+        attempt=step.attempt,
+        parent_step_id=step.parent_step_id,
+        agent_run_id=step.agent_run_id,
         input_json=step.input_json,
         output_json=step.output_json,
         started_at=step.started_at,
         completed_at=step.completed_at,
+    )
+
+
+def to_agent_run_response(agent_run: AgentRun) -> AgentRunResponse:
+    return AgentRunResponse(
+        id=agent_run.id,
+        task_id=agent_run.task_id,
+        role=agent_run.role,
+        parent_run_id=agent_run.parent_run_id,
+        handoff_reason=agent_run.handoff_reason,
+        handoff_payload_json=agent_run.handoff_payload_json,
+        started_at=agent_run.started_at,
+        completed_at=agent_run.completed_at,
+        status=agent_run.status,
+        result_json=agent_run.result_json,
     )
 
 
@@ -72,7 +112,13 @@ async def require_session(db: AsyncSession, session_id: UUID) -> Session:
 
 
 async def require_task(db: AsyncSession, task_id: UUID) -> Task:
-    task = await db.get(Task, task_id)
+    task = (
+        await db.execute(
+            select(Task)
+            .options(selectinload(Task.agent_runs))
+            .where(Task.id == task_id),
+        )
+    ).scalars().first()
     if task is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -234,6 +280,38 @@ async def list_task_steps(
     )
     return Envelope(
         data=[to_task_step_response(step) for step in steps],
+        meta=Pagination(page=page, per_page=per_page, total=total),
+    )
+
+
+@router.get("/tasks/{task_id}/agents", response_model=Envelope[AgentRunResponse])
+async def list_task_agents(
+    task_id: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    page: int = Query(default=1, ge=1),
+    per_page: int = Query(default=50, ge=1, le=200),
+) -> Envelope[AgentRunResponse]:
+    await require_task(db, task_id)
+    total = int(
+        (
+            await db.execute(
+                select(func.count()).select_from(AgentRun).where(AgentRun.task_id == task_id),
+            )
+        ).scalar_one()
+    )
+    runs = list(
+        (
+            await db.execute(
+                select(AgentRun)
+                .where(AgentRun.task_id == task_id)
+                .order_by(AgentRun.started_at.asc())
+                .offset((page - 1) * per_page)
+                .limit(per_page),
+            )
+        ).scalars()
+    )
+    return Envelope(
+        data=[to_agent_run_response(run) for run in runs],
         meta=Pagination(page=page, per_page=per_page, total=total),
     )
 

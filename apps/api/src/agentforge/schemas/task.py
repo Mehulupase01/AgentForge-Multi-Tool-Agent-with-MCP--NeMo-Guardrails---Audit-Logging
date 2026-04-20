@@ -6,6 +6,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, model_validator
 
+from agentforge.schemas.agent import AgentRunSummary
+from agentforge.models.agent_run import AgentRole
 from agentforge.models.task import TaskStatus
 from agentforge.models.task_step import StepStatus, StepType
 
@@ -39,12 +41,14 @@ class TaskResponse(BaseModel):
     session_id: UUID
     user_prompt: str
     plan: list[PlanStep] | None = None
+    supervisor_plan: dict[str, Any] | None = None
     status: TaskStatus
     started_at: datetime | None = None
     completed_at: datetime | None = None
     final_response: str | None = None
     error: str | None = None
     checkpoint_id: str | None = None
+    agent_runs: list[AgentRunSummary] = Field(default_factory=list)
 
 
 class TaskStepResponse(BaseModel):
@@ -54,6 +58,10 @@ class TaskStepResponse(BaseModel):
     step_type: StepType
     description: str
     status: StepStatus
+    agent_role: AgentRole
+    attempt: int
+    parent_step_id: UUID | None = None
+    agent_run_id: UUID | None = None
     input_json: Any | None = None
     output_json: Any | None = None
     started_at: datetime | None = None

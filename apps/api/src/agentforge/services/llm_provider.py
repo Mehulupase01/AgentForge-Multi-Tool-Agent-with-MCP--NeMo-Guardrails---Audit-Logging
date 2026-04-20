@@ -43,6 +43,34 @@ If the prior tool output includes filenames, titles, snippets, or rows, summariz
 Return plain text only.
 """
 
+SUPERVISOR_SYSTEM_PROMPT = """You are AgentForge's multi-agent supervisor.
+Return only valid JSON matching:
+{
+  "handoffs": [
+    {
+      "to": "analyst|researcher|engineer|secretary|security_officer",
+      "reason": "short explanation",
+      "payload": {"query": "...", "limit": 3}
+    }
+  ]
+}
+Rules:
+- Route only when the task clearly benefits from more than one specialist domain.
+- analyst handles sqlite_query-style workforce/project data.
+- researcher handles corpus/web research.
+- engineer handles GitHub questions.
+- secretary has no tools and only writes summaries from provided context.
+- security_officer is a placeholder in Phase 11; only use it if the task explicitly asks for policy review.
+- Keep payloads compact and deterministic.
+- Return no markdown fences or commentary.
+"""
+
+COMPOSE_MULTI_AGENT_PROMPT = """You are AgentForge's orchestrator summarizer.
+Write a concise final answer using only the specialist results provided in the context.
+Do not mention internal routing, handoffs, or hidden system behavior.
+Return plain text only.
+"""
+
 
 @dataclass(slots=True)
 class LLMResponse:
@@ -89,6 +117,40 @@ PLAN_RESPONSE_FORMAT = {
     },
 }
 
+SUPERVISOR_RESPONSE_FORMAT = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "agentforge_supervisor_plan",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "properties": {
+                "handoffs": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "to": {
+                                "type": "string",
+                                "enum": ["analyst", "researcher", "engineer", "secretary", "security_officer"],
+                            },
+                            "reason": {"type": "string"},
+                            "payload": {
+                                "type": "object",
+                                "additionalProperties": True,
+                            },
+                        },
+                        "required": ["to", "reason", "payload"],
+                        "additionalProperties": False,
+                    },
+                }
+            },
+            "required": ["handoffs"],
+            "additionalProperties": False,
+        },
+    },
+}
+
 
 class LLMProvider:
     def __init__(self) -> None:
@@ -124,8 +186,30 @@ class LLMProvider:
             plugins=plugins,
         )
 
+    async def generate_supervisor_plan(self, user_prompt: str) -> LLMResponse:
+        provider_options: dict[str, Any] | None = None
+        plugins: list[dict[str, str]] | None = None
+        if self.provider_name == "openrouter":
+            provider_options = {"require_parameters": True}
+            plugins = [{"id": "response-healing"}]
+        return await self._chat(
+            SUPERVISOR_SYSTEM_PROMPT,
+            user_prompt,
+            response_format=SUPERVISOR_RESPONSE_FORMAT,
+            provider_options=provider_options,
+            plugins=plugins,
+        )
+
     async def reason_step(self, user_prompt: str) -> LLMResponse:
         return await self._chat(REASONING_SYSTEM_PROMPT, user_prompt)
+
+    async def compose_multi_agent_summary(self, user_prompt: str, specialist_results: list[dict[str, Any]]) -> str:
+        payload = {
+            "user_prompt": user_prompt,
+            "specialist_results": specialist_results,
+        }
+        response = await self._chat(COMPOSE_MULTI_AGENT_PROMPT, json.dumps(payload, ensure_ascii=True))
+        return response.text
 
     async def _chat(
         self,

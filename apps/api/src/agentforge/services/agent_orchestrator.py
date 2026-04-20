@@ -8,6 +8,8 @@ from time import perf_counter
 from typing import Any, TypedDict
 from uuid import UUID
 
+from agentforge.agents.supervisor_graph import SupervisorGraph
+from agentforge.models.agent_run import AgentRole
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.errors import GraphInterrupt
 from langgraph.graph import END, START, StateGraph
@@ -69,6 +71,13 @@ class AgentOrchestrator:
         self._graph: Any | None = None
         self._checkpointer_cm: Any | None = None
         self._graph_lock = asyncio.Lock()
+        self._supervisor_graph = SupervisorGraph(
+            session_factory=session_factory,
+            mcp_pool=mcp_pool,
+            event_bus=event_bus,
+            audit_service=self._audit_service,
+            llm_provider=llm_provider,
+        )
 
     async def _ensure_graph(self):
         if self._graph is not None:
@@ -154,15 +163,20 @@ class AgentOrchestrator:
 
     async def _run_task(self, task_id: str, *, resume_approval_id: str | None = None) -> None:
         await asyncio.sleep(0.05)
-        graph = await self._ensure_graph()
-        config = {"configurable": {"thread_id": task_id}}
-
         if resume_approval_id is None:
             current_input: AgentState | Command = await self._load_initial_state(task_id)
         else:
             current_input = Command(resume={"approval_id": resume_approval_id})
 
         try:
+            if resume_approval_id is None and self._should_use_supervisor_flow(current_input):
+                result = await self._supervisor_graph.run(UUID(task_id), current_input["user_prompt"])
+                if result.rejected:
+                    return
+                return
+
+            graph = await self._ensure_graph()
+            config = {"configurable": {"thread_id": task_id}}
             while True:
                 await graph.ainvoke(current_input, config=config)
                 snapshot = await graph.aget_state(config)
@@ -193,6 +207,24 @@ class AgentOrchestrator:
             "rejected": False,
             "input_rails": input_rails,
         }
+
+    @staticmethod
+    def _should_use_supervisor_flow(state: AgentState | Command) -> bool:
+        if not isinstance(state, dict):
+            return False
+        prompt = str(state.get("user_prompt", "")).lower()
+        if " and " not in prompt:
+            return False
+        domain_keywords = {
+            AgentRole.ANALYST: ("engineer", "employee", "employees", "project", "projects", "budget", "department"),
+            AgentRole.RESEARCHER: ("article", "articles", "research", "corpus", "web", "weather", "news"),
+            AgentRole.ENGINEER: ("github", "repo", "repository", "issue", "issues", "pull request"),
+        }
+        matched_roles = 0
+        for keywords in domain_keywords.values():
+            if any(keyword in prompt for keyword in keywords):
+                matched_roles += 1
+        return matched_roles >= 2
 
     async def _plan(self, state: AgentState) -> AgentState:
         response = await self._llm_provider.generate_plan(state["user_prompt"])

@@ -14,6 +14,7 @@ from agentforge.auth import require_api_key
 from agentforge.config import settings
 from agentforge.database import dispose_engine, init_engine
 from agentforge.logging_setup import configure_logging
+from agentforge.routers.agents import router as agents_router
 from agentforge.routers.approvals import router as approvals_router
 from agentforge.routers.audit import router as audit_router
 from agentforge.routers.corpus import router as corpus_router
@@ -128,6 +129,7 @@ def create_app() -> FastAPI:
         )
 
     app.include_router(health_router)
+    app.include_router(agents_router, dependencies=[Depends(require_api_key)])
     app.include_router(sessions_router, dependencies=[Depends(require_api_key)])
     app.include_router(approvals_router, dependencies=[Depends(require_api_key)])
     app.include_router(audit_router, dependencies=[Depends(require_api_key)])

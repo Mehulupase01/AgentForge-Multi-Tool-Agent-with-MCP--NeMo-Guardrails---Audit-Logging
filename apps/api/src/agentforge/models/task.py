@@ -11,6 +11,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from agentforge.models.base import Base, TimestampMixin, new_uuid
 
 if TYPE_CHECKING:
+    from agentforge.models.agent_run import AgentRun
     from agentforge.models.approval import Approval
     from agentforge.models.session import Session
     from agentforge.models.task_step import TaskStep
@@ -48,6 +49,11 @@ class Task(Base, TimestampMixin):
     checkpoint_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     session: Mapped["Session"] = relationship(back_populates="tasks")
+    agent_runs: Mapped[list["AgentRun"]] = relationship(
+        back_populates="task",
+        cascade="all, delete-orphan",
+        order_by="AgentRun.started_at",
+    )
     steps: Mapped[list["TaskStep"]] = relationship(
         back_populates="task",
         cascade="all, delete-orphan",

@@ -1,3 +1,4 @@
+from agentforge.models.agent_run import AgentRole, AgentRun, AgentRunStatus
 from agentforge.models.approval import Approval, ApprovalDecision, RiskLevel
 from agentforge.models.audit_event import AuditEvent
 from agentforge.models.corpus import CorpusDocument
@@ -11,6 +12,9 @@ from agentforge.models.tool_call import ToolCall
 __all__ = [
     "Approval",
     "ApprovalDecision",
+    "AgentRole",
+    "AgentRun",
+    "AgentRunStatus",
     "AuditEvent",
     "CorpusDocument",
     "LLMCall",
