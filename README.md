@@ -4,13 +4,14 @@
 
 [![CI](https://github.com/Mehulupase01/AgentForge-Multi-Tool-Agent-with-MCP--NeMo-Guardrails---Audit-Logging/actions/workflows/ci.yml/badge.svg)](https://github.com/Mehulupase01/AgentForge-Multi-Tool-Agent-with-MCP--NeMo-Guardrails---Audit-Logging/actions/workflows/ci.yml)
 [![Red-Team](https://github.com/Mehulupase01/AgentForge-Multi-Tool-Agent-with-MCP--NeMo-Guardrails---Audit-Logging/actions/workflows/redteam.yml/badge.svg)](https://github.com/Mehulupase01/AgentForge-Multi-Tool-Agent-with-MCP--NeMo-Guardrails---Audit-Logging/actions/workflows/redteam.yml)
-![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.115.5-009688?logo=fastapi&logoColor=white)
-![LangGraph](https://img.shields.io/badge/LangGraph-0.2.61-1C3C3C)
-![MCP](https://img.shields.io/badge/MCP-1.27.0-111111)
-![NeMo Guardrails](https://img.shields.io/badge/NeMo_Guardrails-0.11.0-76B900)
-![Streamlit](https://img.shields.io/badge/Streamlit-1.41.1-FF4B4B?logo=streamlit&logoColor=white)
-![License](https://img.shields.io/badge/License-MIT-green.svg)
+[![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-Control%20Plane-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![LangGraph](https://img.shields.io/badge/LangGraph-Orchestrator-1C3C3C?style=flat-square)](https://langchain-ai.github.io/langgraph/)
+[![MCP](https://img.shields.io/badge/MCP-Multi%20Tool%20Sidecars-111111?style=flat-square)](https://modelcontextprotocol.io/)
+[![NeMo Guardrails](https://img.shields.io/badge/NeMo-Guardrails-76B900?style=flat-square)](https://github.com/NVIDIA/NeMo-Guardrails)
+[![Streamlit](https://img.shields.io/badge/Streamlit-Operator%20UI-FF4B4B?style=flat-square&logo=streamlit&logoColor=white)](https://streamlit.io/)
+[![OpenRouter](https://img.shields.io/badge/OpenRouter-Free%20Models-8A5CF6?style=flat-square)](https://openrouter.ai/)
+[![License MIT](https://img.shields.io/badge/License-MIT-2EA043?style=flat-square)](LICENSE)
 
 AgentForge is a production-structured agent platform where an LLM can plan work, call tools through MCP sidecars, pause risky actions for human approval, and leave behind a tamper-evident audit trail that can be verified after the fact.
 
@@ -29,6 +30,7 @@ This is not a toy chatbot repo. It is a full control plane for enterprise-style 
 
 - [Short Abstract](#short-abstract)
 - [Deep Introduction](#deep-introduction)
+- [Platform Snapshot](#platform-snapshot)
 - [What Makes This Different](#what-makes-this-different)
 - [System Architecture](#system-architecture)
 - [Architecture Deep Dive](#architecture-deep-dive)
@@ -78,6 +80,20 @@ At runtime, the system creates a session, accepts a task, and runs deterministic
 The result is a system that is useful both for building agents and for governing them.
 
 This repository also deliberately separates local workstation constraints from release quality. The maintainer's Windows machine had Docker Desktop and Bitdefender interference during development, so the Docker verification path was explicitly waived locally. Host-side verification, GitHub Actions CI, and the persisted red-team workflow were used instead to bring the repository to a clean release state.
+
+---
+
+## Platform Snapshot
+
+| Area | What is included | Why it matters |
+| --- | --- | --- |
+| Control plane | FastAPI API, typed schemas, health/readiness endpoints, API-key auth | Gives the system an explicit and automatable boundary instead of a hidden prompt loop |
+| Orchestration | LangGraph planner/executor, persisted checkpoints, resumable task graph | Makes long-running and approval-paused work recoverable |
+| Tooling | Four MCP sidecars: `file_search`, `web_fetch`, `sqlite_query`, `github` | Keeps tool execution isolated, inspectable, and extensible |
+| Safety | NeMo Guardrails, prompt-injection checks, PII redaction, tool allowlist, risk classification | Turns safety behavior into deterministic policy instead of vague prompting |
+| Governance | Append-only audit chain, approval decisions, integrity verification endpoints | Supports compliance, investigation, and post-run trust |
+| Operator UX | Streamlit console, CLI client, HTTP-first API | Makes the platform usable by operators as well as developers |
+| Evaluation | Persisted redteam runs, CI-backed gating, scenario scoring | Prevents safety drift from being invisible between releases |
 
 ---
 
@@ -408,6 +424,19 @@ This model split is what makes the platform explainable after execution. You can
 ---
 
 ## Public Interfaces
+
+### API surface summary
+
+| Domain | Primary endpoints | Typical operator outcome |
+| --- | --- | --- |
+| Health | `GET /api/v1/health/liveness`, `GET /api/v1/health/readiness` | Confirms the API, database, and MCP dependencies are up |
+| Sessions | `POST /api/v1/sessions`, `GET /api/v1/sessions`, `GET /api/v1/sessions/{session_id}` | Creates and inspects agent work containers |
+| Tasks | `POST /api/v1/sessions/{session_id}/tasks`, `GET /api/v1/tasks/{task_id}`, `GET /api/v1/tasks/{task_id}/stream`, `POST /api/v1/tasks/{task_id}/resume` | Starts agent work, watches streaming progress, resumes paused runs |
+| Approvals | `GET /api/v1/approvals`, `GET /api/v1/approvals/{approval_id}`, `POST /api/v1/approvals/{approval_id}/decision` | Reviews and resolves risky actions |
+| Audit | `GET /api/v1/audit/events`, `GET /api/v1/audit/sessions/{session_id}/events`, `GET /api/v1/audit/integrity` | Investigates behavior and verifies tamper-evidence |
+| Corpus | `POST /api/v1/corpus/reindex`, `GET /api/v1/corpus/documents` | Refreshes and inspects the searchable knowledge base |
+| MCP | `GET /api/v1/mcp/servers`, `GET /api/v1/mcp/servers/{server_name}/tools` | Confirms tool-server health and exposed tool metadata |
+| Redteam | `POST /api/v1/redteam/run`, `GET /api/v1/redteam/runs`, `GET /api/v1/redteam/runs/{run_id}`, `GET /api/v1/redteam/runs/{run_id}/results` | Evaluates safety posture and release readiness |
 
 ### Health and readiness
 
@@ -913,6 +942,16 @@ The intended full stack includes:
 - database
 - all four MCP sidecars
 - Streamlit UI
+
+### Deployment modes
+
+| Mode | Components | Best for | Notes |
+| --- | --- | --- | --- |
+| Local API-only | API + local SQLite/checkpoints + optional locally spawned MCP processes | Fast iteration on routers, schemas, and orchestration logic | Lowest friction on constrained Windows machines |
+| Local host full-stack | API, local DB, sidecars, UI, CLI, corpus fixtures | End-to-end operator testing without containers | Sensitive to local security software and port/process interference |
+| Docker Compose | `docker-compose.yml` or `ops/docker/compose.full.yml` with DB, API, MCP sidecars, UI | Repeatable full-stack runs and release-like verification | Preferred when Docker Desktop is healthy |
+| GitHub Actions CI | Lint, API tests, MCP test matrix, image builds, redteam gate | Release truth and regression prevention | Current green CI status is the strongest verification source for this repo |
+| Hardened production | Managed secrets, managed Postgres, TLS termination, observability, protected branches | Real operator deployment | Requires stronger auth, backups, alerting, and environment-specific secret handling |
 
 For production hardening, the important next-layer concerns are:
 
