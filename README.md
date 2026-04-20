@@ -31,12 +31,15 @@ This is not a toy chatbot repo. It is a full control plane for enterprise-style 
 - [Deep Introduction](#deep-introduction)
 - [What Makes This Different](#what-makes-this-different)
 - [System Architecture](#system-architecture)
+- [Architecture Deep Dive](#architecture-deep-dive)
 - [Request Lifecycle](#request-lifecycle)
 - [Safety and Control Model](#safety-and-control-model)
 - [MCP Tool Plane](#mcp-tool-plane)
 - [Persisted Data Model](#persisted-data-model)
 - [Public Interfaces](#public-interfaces)
+- [API Examples](#api-examples)
 - [Operator Surfaces](#operator-surfaces)
+- [UI Walkthrough](#ui-walkthrough)
 - [Evaluation and Verification](#evaluation-and-verification)
 - [Detailed Local Run Guide](#detailed-local-run-guide)
 - [Repository Layout](#repository-layout)
@@ -97,7 +100,7 @@ That makes the tool surface explicit and introspectable and keeps the control pl
 
 ### 3. Guardrails are deterministic and auditable
 
-The safety layer is not just “hope the model behaves.” It combines prompt-injection screening, PII redaction, tool allowlisting, risk classification, approval gates, and audit events so blocked behavior is visible and testable.
+The safety layer is not just "hope the model behaves." It combines prompt-injection screening, PII redaction, tool allowlisting, risk classification, approval gates, and audit events so blocked behavior is visible and testable.
 
 ### 4. Approval is built into the execution graph
 
@@ -173,6 +176,109 @@ flowchart LR
 
 ---
 
+## Architecture Deep Dive
+
+### Control-plane execution map
+
+```mermaid
+flowchart TB
+    subgraph Intake[Task Intake]
+        S[Session API]
+        T[Task API]
+        H[Health + Readiness]
+    end
+
+    subgraph Runtime[Execution Runtime]
+        G[Guardrails Runner]
+        O[Agent Orchestrator]
+        B[Task Event Bus]
+        A[Approval Service]
+        U[Audit Service]
+    end
+
+    subgraph Persistence[Persistence]
+        DB[(Main Database)]
+        CP[(Checkpoint Store)]
+    end
+
+    subgraph Tooling[MCP Tool Plane]
+        MP[MCP Client Pool]
+        F[file_search]
+        W[web_fetch]
+        Q[sqlite_query]
+        GH[github]
+    end
+
+    T --> G
+    G --> O
+    O --> MP
+    O --> A
+    O --> U
+    O --> B
+    O --> CP
+    S --> DB
+    T --> DB
+    A --> DB
+    U --> DB
+    MP --> F
+    MP --> W
+    MP --> Q
+    MP --> GH
+    H --> MP
+    H --> DB
+```
+
+### Approval-resume sequence
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant API
+    participant Guardrails
+    participant Orchestrator
+    participant Approval
+    participant MCP
+    participant Audit
+
+    User->>API: POST /sessions/{id}/tasks
+    API->>Guardrails: validate prompt
+    Guardrails-->>API: allowed / blocked
+    API->>Orchestrator: start task
+    Orchestrator->>Audit: task.planned
+    Orchestrator->>MCP: execute step
+    Orchestrator->>Approval: interrupt when approval is required
+    Approval-->>Orchestrator: await decision
+    User->>API: POST /approvals/{id}/decision
+    API->>Approval: persist decision
+    Approval-->>Orchestrator: resume signal
+    Orchestrator->>MCP: continue execution
+    Orchestrator->>Audit: task.completed
+    API-->>User: final response / SSE stream
+```
+
+### Data relationships at a glance
+
+```mermaid
+erDiagram
+    SESSION ||--o{ TASK : contains
+    TASK ||--o{ TASK_STEP : records
+    TASK ||--o{ TOOL_CALL : invokes
+    TASK ||--o{ LLM_CALL : emits
+    TASK ||--o{ APPROVAL : requests
+    SESSION ||--o{ AUDIT_EVENT : logs
+    TASK ||--o{ AUDIT_EVENT : logs
+    REDTEAM_RUN ||--o{ REDTEAM_RESULT : contains
+```
+
+These diagrams correspond directly to the actual module split in `apps/api/src/agentforge/`:
+
+- `routers/` defines the HTTP boundary
+- `services/` implements orchestration, approvals, audit, redteam, provider integration, and MCP pooling
+- `models/` persists the session, task, tool, approval, audit, and redteam lifecycle
+- `guardrails/` enforces deterministic safety policy around prompts, outputs, and tools
+
+---
+
 ## Request Lifecycle
 
 ```mermaid
@@ -214,7 +320,7 @@ flowchart TD
 
 ## Safety and Control Model
 
-AgentForge’s safety model is layered rather than singular.
+AgentForge's safety model is layered rather than singular.
 
 ### Input safety
 
@@ -354,6 +460,144 @@ This model split is what makes the platform explainable after execution. You can
 
 ---
 
+## API Examples
+
+The examples below are representative of the actual schema objects defined in `apps/api/src/agentforge/schemas/`.
+
+### 1. Create a session
+
+```bash
+curl -X POST http://localhost:8015/api/v1/sessions \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: dev-key" \
+  -d '{"metadata":{"source":"readme-example"}}'
+```
+
+```json
+{
+  "id": "7c1b9d8c-3b32-4d2d-8d84-a5d70228f0fb",
+  "user_id": "system",
+  "status": "active",
+  "started_at": "2026-04-20T16:00:00Z",
+  "ended_at": null,
+  "metadata": {
+    "source": "readme-example"
+  },
+  "task_count": 0,
+  "tool_call_count": 0,
+  "approval_count": 0
+}
+```
+
+### 2. Submit a task
+
+```bash
+curl -X POST http://localhost:8015/api/v1/sessions/7c1b9d8c-3b32-4d2d-8d84-a5d70228f0fb/tasks \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: dev-key" \
+  -d '{"user_prompt":"Find transformer content and summarize it."}'
+```
+
+```json
+{
+  "id": "4bf22d77-3815-4e7f-9af2-763ec0286b75",
+  "session_id": "7c1b9d8c-3b32-4d2d-8d84-a5d70228f0fb",
+  "user_prompt": "Find transformer content and summarize it.",
+  "plan": null,
+  "status": "queued",
+  "started_at": null,
+  "completed_at": null,
+  "final_response": null,
+  "error": null,
+  "checkpoint_id": null
+}
+```
+
+### 3. Inspect MCP server state
+
+```bash
+curl http://localhost:8015/api/v1/mcp/servers \
+  -H "X-API-Key: dev-key"
+```
+
+```json
+[
+  {
+    "name": "file_search",
+    "url": "http://localhost:8101/mcp",
+    "status": "ok",
+    "tool_count": 2,
+    "server_label": "file-search-mcp"
+  },
+  {
+    "name": "github",
+    "url": "http://localhost:8104/mcp",
+    "status": "ok",
+    "tool_count": 2,
+    "server_label": "github-mcp"
+  }
+]
+```
+
+### 4. Approve a risky action
+
+```bash
+curl -X POST http://localhost:8015/api/v1/approvals/9d24fc4e-6a97-49e0-84d5-3d0c2f426c50/decision \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: dev-key" \
+  -d '{"decision":"approved","rationale":"Reviewed by operator"}'
+```
+
+```json
+{
+  "id": "9d24fc4e-6a97-49e0-84d5-3d0c2f426c50",
+  "task_id": "4bf22d77-3815-4e7f-9af2-763ec0286b75",
+  "task_step_id": "89cddbc1-0c46-41bf-9322-0a1264f5f850",
+  "risk_level": "high",
+  "risk_reason": "tool call touched a guarded capability",
+  "action_summary": "Allow sqlite_query.query_database against the synthetic fixture",
+  "requested_at": "2026-04-20T16:02:00Z",
+  "decided_at": "2026-04-20T16:03:12Z",
+  "decided_by": "operator",
+  "decision": "approved",
+  "rationale": "Reviewed by operator"
+}
+```
+
+### 5. Verify audit integrity
+
+```bash
+curl http://localhost:8015/api/v1/audit/integrity \
+  -H "X-API-Key: dev-key"
+```
+
+```json
+{
+  "verified": true,
+  "events_checked": 128,
+  "first_broken_sequence": null,
+  "expected_chain_hash": null,
+  "actual_chain_hash": null
+}
+```
+
+### 6. Stream a task over SSE
+
+The task stream is consumed by both the UI and CLI:
+
+```text
+event: plan
+data: {"steps":[{"step_id":"step-1","type":"tool_call","description":"Search the corpus","server":"file_search","tool":"search_documents","args":{"query":"transformer"}}]}
+
+event: step
+data: {"ordinal":1,"status":"completed","description":"Search the corpus"}
+
+event: task_completed
+data: {"final_response":"Transformers replace recurrence with attention..."}
+```
+
+---
+
 ## Operator Surfaces
 
 ### CLI
@@ -377,9 +621,121 @@ The Streamlit app acts as an operator console for:
 - audit inspection
 - general control-plane visibility
 
+The current Streamlit surface is organized into one home view plus four dedicated pages:
+
+- `app.py`
+  - readiness snapshot
+  - recent sessions table
+  - navigation guidance
+- `pages/1_Run_Agent.py`
+  - submit prompts
+  - stream task events
+  - inspect final responses
+- `pages/2_Approvals.py`
+  - list pending approvals
+  - approve or reject risky actions
+- `pages/3_Audit_Log.py`
+  - browse audit events
+  - inspect integrity results
+- `pages/4_Red_Team.py`
+  - trigger red-team runs
+  - inspect run summaries and results
+
 ### API-first operation
 
 Everything the UI and CLI do ultimately maps back to the HTTP API, so the system remains automatable for external tools or future frontends.
+
+---
+
+## UI Walkthrough
+
+This repository does not currently ship screenshot assets in Git, so this section serves as a grounded walkthrough of the real UI surface instead of a mock marketing gallery.
+
+### Navigation map
+
+```mermaid
+flowchart LR
+    Home[Home]
+    Run[Run Agent]
+    Approvals[Approvals]
+    Audit[Audit Log]
+    Redteam[Red Team]
+
+    Home --> Run
+    Home --> Approvals
+    Home --> Audit
+    Home --> Redteam
+```
+
+### Home page
+
+The home page acts as the operator dashboard:
+
+- control-plane title and framing
+- readiness JSON panel
+- recent sessions table
+- sidebar hints for the main workflows
+
+Conceptually it looks like this:
+
+```text
++---------------------------------------------------------------+
+| AgentForge Control Plane                                      |
+| Operator view for health, sessions, approvals, audit, safety  |
++-----------------------------+---------------------------------+
+| Readiness                   | Recent Sessions                 |
+| { status, database, mcp }   | session_id | status | tasks...  |
+|                             | ...                             |
++-----------------------------+---------------------------------+
+| Sidebar pages: Run Agent | Approvals | Audit Log | Red Team   |
++---------------------------------------------------------------+
+```
+
+### Run Agent page
+
+This is the main operational page for daily usage:
+
+- create a new task
+- reuse an existing session when needed
+- watch live SSE events
+- inspect the final response
+
+It is effectively the human-facing window into the orchestrator, task event bus, and tool execution lifecycle.
+
+### Approvals page
+
+This page is the human checkpoint:
+
+- review pending approvals
+- inspect risk level and action summary
+- approve or reject the blocked action
+
+It maps directly to the approval service and task resume flow.
+
+### Audit Log page
+
+This page exposes the governance story:
+
+- list audit events
+- inspect event payloads and hash-chain state
+- verify integrity from the UI
+
+### Red Team page
+
+This page is the safety operations surface:
+
+- trigger a red-team run
+- inspect run metadata
+- review scenario outcomes and safety posture
+
+### Why the UI matters
+
+The UI is not just a cosmetic layer. Each page corresponds to a concrete subsystem:
+
+- `Run Agent` -> task intake, streaming, orchestration
+- `Approvals` -> human-in-the-loop control
+- `Audit Log` -> integrity and compliance visibility
+- `Red Team` -> safety evaluation and release confidence
 
 ---
 
