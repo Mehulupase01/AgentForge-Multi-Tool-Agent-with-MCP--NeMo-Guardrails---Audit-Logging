@@ -12,12 +12,15 @@ from agentforge.agents.base import AGENT_CAPABILITIES, HandoffMessage
 from agentforge.agents.orchestrator import OrchestratorAgent
 from agentforge.agents.specialists import SpecialistPlanner, SpecialistSummarizer
 from agentforge.models.agent_run import AgentRole, AgentRun, AgentRunStatus
+from agentforge.models.approval import ApprovalDecision, RiskLevel
 from agentforge.models.task import Task, TaskStatus
 from agentforge.models.task_step import StepStatus, StepType, TaskStep
 from agentforge.models.tool_call import ToolCall
 from agentforge.schemas.task import PlanStep
+from agentforge.services.approval_service import ApprovalService, RiskAssessment
 from agentforge.services.audit_service import AuditService
 from agentforge.services.mcp_client_pool import MCPClientPool
+from agentforge.services.self_healing import SelfHealingOutcome, SelfHealingWrapper
 from agentforge.services.task_event_bus import TaskEventBus
 
 
@@ -26,6 +29,7 @@ class SupervisorExecutionResult:
     supervisor_plan: dict[str, Any]
     final_response: str
     rejected: bool = False
+    awaiting_approval: bool = False
     error: str | None = None
 
 
@@ -37,12 +41,15 @@ class SupervisorGraph:
         mcp_pool: MCPClientPool,
         event_bus: TaskEventBus,
         audit_service: AuditService,
+        approval_service: ApprovalService,
         llm_provider,
     ) -> None:
         self._session_factory = session_factory
         self._mcp_pool = mcp_pool
         self._event_bus = event_bus
         self._audit_service = audit_service
+        self._approval_service = approval_service
+        self._self_healing = SelfHealingWrapper(llm_provider)
         self._orchestrator = OrchestratorAgent(llm_provider)
 
     async def run(self, task_id: UUID, user_prompt: str) -> SupervisorExecutionResult:
@@ -59,6 +66,7 @@ class SupervisorGraph:
                 raise RuntimeError("Task not found during supervisor execution")
             task.status = TaskStatus.EXECUTING
             task.started_at = datetime.now(UTC)
+            task.plan = supervisor_plan
             session.add(
                 AgentRun(
                     task_id=task_id,
@@ -74,6 +82,11 @@ class SupervisorGraph:
 
         for handoff in handoffs:
             role = AgentRole(handoff["to"])
+            existing_result = await self._get_completed_specialist_result(task_id, role, handoff)
+            if existing_result is not None:
+                specialist_results.append(existing_result)
+                continue
+
             await self._event_bus.publish(
                 task_id,
                 "agent_handoff",
@@ -82,7 +95,15 @@ class SupervisorGraph:
             agent_run_id = await self._create_agent_run(task_id, role, orchestrator_run_id, handoff)
             specialist_result = await self._run_specialist(task_id, user_prompt, role, handoff, agent_run_id)
             specialist_results.append(specialist_result)
-            await self._finalize_agent_run(agent_run_id, specialist_result)
+
+            if specialist_result.get("awaiting_approval"):
+                await self._finalize_orchestrator_run(task_id, supervisor_plan, AgentRunStatus.HANDED_OFF)
+                return SupervisorExecutionResult(
+                    supervisor_plan=supervisor_plan,
+                    final_response="",
+                    awaiting_approval=True,
+                )
+
             if specialist_result.get("rejected"):
                 await self._finalize_orchestrator_run(task_id, supervisor_plan, AgentRunStatus.REJECTED)
                 return SupervisorExecutionResult(
@@ -91,6 +112,7 @@ class SupervisorGraph:
                     rejected=True,
                     error=str(specialist_result["summary"]),
                 )
+            await self._finalize_agent_run(agent_run_id, specialist_result)
 
         final_response = await self._orchestrator.compose(user_prompt, specialist_results)
 
@@ -114,6 +136,33 @@ class SupervisorGraph:
         await self._event_bus.publish(task_id, "task_completed", {"final_response": final_response})
         await self._finalize_orchestrator_run(task_id, {**supervisor_plan, "final_response": final_response}, AgentRunStatus.COMPLETED)
         return SupervisorExecutionResult(supervisor_plan=supervisor_plan, final_response=final_response)
+
+    async def resume_after_approval(self, task_id: UUID, approval_id: UUID) -> bool:
+        async with self._session_factory() as session:
+            approval = await self._approval_service.get_by_id(session, approval_id)
+            task = await session.get(Task, task_id)
+            if approval is None or task is None:
+                raise RuntimeError("Approval state missing during supervisor resume")
+
+            if approval.decision == ApprovalDecision.REJECTED:
+                rejection_reason, _ = await self._approval_service.apply_rejection(session, approval)
+                await session.commit()
+                await self._event_bus.publish(
+                    task_id,
+                    "task_rejected",
+                    {"error": rejection_reason, "approval_id": str(approval.id)},
+                )
+                return False
+
+            await self._approval_service.mark_gate_approved(session, approval)
+            await session.commit()
+
+        await self._event_bus.publish(
+            task_id,
+            "approval_resumed",
+            {"approval_id": str(approval_id), "decision": ApprovalDecision.APPROVED.value},
+        )
+        return True
 
     async def _run_specialist(
         self,
@@ -141,21 +190,69 @@ class SupervisorGraph:
                 "rejected": True,
             }
 
-        tool_result = await self._mcp_pool.call_tool(server_name, tool_name, request.args)
+        step = PlanStep(
+            step_id=f"{role.value}-{server_name}-{tool_name}",
+            type="tool_call",
+            description=request.description,
+            server=server_name,
+            tool=tool_name,
+            args=request.args,
+        )
+        healing = await self._self_healing.execute(
+            step=step,
+            input_payload={"server": server_name, "tool": tool_name, "args": request.args},
+            execute_fn=lambda: self._mcp_pool.call_tool(server_name, tool_name, request.args),
+            user_prompt=user_prompt,
+            last_output=None,
+            kind="tool_call",
+        )
+
+        history_root_step_id = await self._record_history_entries(task_id, role, step, healing.history_entries, agent_run_id)
+        await self._record_retry_events(task_id, role, step.step_id, healing.retry_events)
+
+        if healing.needs_approval:
+            approval_id = await self._request_operator_review(task_id, step, role, healing, handoff)
+            return {
+                "role": role.value,
+                "summary": healing.approval_summary or f"{role.value} is awaiting operator approval after repeated failure.",
+                "data": {"approval_id": approval_id},
+                "awaiting_approval": True,
+            }
+
+        if healing.error and healing.output is None:
+            await self._record_terminal_failure(task_id, role, step, healing, agent_run_id, history_root_step_id)
+            return {
+                "role": role.value,
+                "summary": f"{role.value} failed while executing {qualified_tool}.",
+                "data": {"error": healing.error},
+                "rejected": True,
+            }
+
+        tool_result = healing.output
         summary = SpecialistSummarizer.summarize(role, tool_result)
-        await self._record_tool_step(task_id, role, request.description, server_name, tool_name, request.args, tool_result, agent_run_id)
+        await self._record_tool_step(
+            task_id=task_id,
+            role=role,
+            step=step,
+            result=tool_result,
+            agent_run_id=agent_run_id,
+            attempt=healing.attempt,
+            step_type=healing.step_type_override or StepType.TOOL_CALL,
+            parent_step_id=history_root_step_id if healing.parent_to_history_root else None,
+        )
         return {"role": role.value, "summary": summary, "data": tool_result}
 
     async def _record_tool_step(
         self,
+        *,
         task_id: UUID,
         role: AgentRole,
-        description: str,
-        server_name: str,
-        tool_name: str,
-        arguments: dict[str, Any],
+        step: PlanStep,
         result: Any,
         agent_run_id: UUID,
+        attempt: int,
+        step_type: StepType,
+        parent_step_id: UUID | None,
     ) -> None:
         async with self._session_factory() as session:
             task = await session.get(Task, task_id)
@@ -165,13 +262,14 @@ class SupervisorGraph:
             task_step = TaskStep(
                 task_id=task_id,
                 ordinal=ordinal,
-                step_type=StepType.TOOL_CALL,
-                description=description,
+                step_type=step_type,
+                description=step.description,
                 status=StepStatus.COMPLETED,
                 agent_role=role,
-                attempt=1,
+                attempt=attempt,
+                parent_step_id=parent_step_id,
                 agent_run_id=agent_run_id,
-                input_json={"server": server_name, "tool": tool_name, "args": arguments},
+                input_json={"server": step.server, "tool": step.tool, "args": step.args},
                 output_json=result,
                 started_at=datetime.now(UTC),
                 completed_at=datetime.now(UTC),
@@ -181,9 +279,9 @@ class SupervisorGraph:
             session.add(
                 ToolCall(
                     task_step_id=task_step.id,
-                    server_name=server_name,
-                    tool_name=tool_name,
-                    arguments_json=arguments,
+                    server_name=step.server or "",
+                    tool_name=step.tool or "",
+                    arguments_json=step.args,
                     result_json=result,
                     error=None,
                     duration_ms=0,
@@ -197,7 +295,7 @@ class SupervisorGraph:
                 session,
                 event_type="agent.completed",
                 actor=role.value,
-                payload={"task_id": str(task_id), "role": role.value, "tool": f"{server_name}.{tool_name}"},
+                payload={"task_id": str(task_id), "role": role.value, "tool": f"{step.server}.{step.tool}"},
                 session_id=task.session_id,
                 task_id=task.id,
             )
@@ -206,8 +304,8 @@ class SupervisorGraph:
             "step",
             {
                 "ordinal": ordinal,
-                "type": "tool_call",
-                "description": description,
+                "type": step_type.value,
+                "description": step.description,
                 "status": StepStatus.COMPLETED.value,
                 "output": result,
                 "agent_role": role.value,
@@ -343,6 +441,205 @@ class SupervisorGraph:
             agent_run.completed_at = datetime.now(UTC)
             agent_run.result_json = result
             await session.commit()
+
+    async def _record_history_entries(
+        self,
+        task_id: UUID,
+        role: AgentRole,
+        step: PlanStep,
+        history_entries: list[dict[str, Any]],
+        agent_run_id: UUID,
+    ) -> UUID | None:
+        if not history_entries:
+            return None
+
+        history_root_step_id: UUID | None = None
+        async with self._session_factory() as session:
+            for entry in history_entries:
+                task_step = TaskStep(
+                    task_id=task_id,
+                    ordinal=await self._next_ordinal(session, task_id),
+                    step_type=entry["step_type"],
+                    description=entry["description"],
+                    status=entry["status"],
+                    agent_role=role,
+                    attempt=int(entry.get("attempt", 1)),
+                    parent_step_id=history_root_step_id if entry.get("link_to_history_root") else None,
+                    agent_run_id=agent_run_id,
+                    input_json=entry.get("input_json"),
+                    output_json=entry.get("output_json"),
+                    started_at=datetime.now(UTC),
+                    completed_at=datetime.now(UTC),
+                )
+                session.add(task_step)
+                await session.flush()
+                if history_root_step_id is None:
+                    history_root_step_id = task_step.id
+
+                if entry["step_type"] in {StepType.TOOL_CALL, StepType.RETRY}:
+                    session.add(
+                        ToolCall(
+                            task_step_id=task_step.id,
+                            server_name=step.server or "",
+                            tool_name=step.tool or "",
+                            arguments_json=step.args,
+                            result_json=entry.get("output_json"),
+                            error=(entry.get("output_json") or {}).get("error") if isinstance(entry.get("output_json"), dict) else None,
+                            duration_ms=0,
+                            required_approval=False,
+                            started_at=task_step.started_at,
+                            completed_at=task_step.completed_at,
+                        )
+                    )
+            await session.commit()
+        return history_root_step_id
+
+    async def _record_retry_events(
+        self,
+        task_id: UUID,
+        role: AgentRole,
+        step_id: str,
+        retry_events: list[dict[str, Any]],
+    ) -> None:
+        if not retry_events:
+            return
+
+        async with self._session_factory() as session:
+            task = await session.get(Task, task_id)
+            if task is None:
+                raise RuntimeError("Task not found while recording specialist retry event")
+            for retry_event in retry_events:
+                await self._audit_service.record_event(
+                    session,
+                    event_type="agent.retry",
+                    actor=role.value,
+                    payload={
+                        "task_id": str(task_id),
+                        "step_id": step_id,
+                        "attempt": retry_event["attempt"],
+                        "error": retry_event["error"],
+                        "role": role.value,
+                    },
+                    session_id=task.session_id,
+                    task_id=task.id,
+                )
+                await self._event_bus.publish(
+                    task_id,
+                    "agent_retry",
+                    {"step_id": step_id, "attempt": retry_event["attempt"], "error": retry_event["error"], "agent_role": role.value},
+                )
+
+    async def _record_terminal_failure(
+        self,
+        task_id: UUID,
+        role: AgentRole,
+        step: PlanStep,
+        healing: SelfHealingOutcome,
+        agent_run_id: UUID,
+        history_root_step_id: UUID | None,
+    ) -> None:
+        async with self._session_factory() as session:
+            task = await session.get(Task, task_id)
+            agent_run = await session.get(AgentRun, agent_run_id)
+            if task is None:
+                raise RuntimeError("Task not found while recording specialist failure")
+            ordinal = await self._next_ordinal(session, task_id)
+            task.status = TaskStatus.FAILED
+            task.error = healing.error
+            task.completed_at = datetime.now(UTC)
+            session.add(
+                TaskStep(
+                    task_id=task_id,
+                    ordinal=ordinal,
+                    step_type=healing.step_type_override or StepType.TOOL_CALL,
+                    description=step.description,
+                    status=StepStatus.FAILED,
+                    agent_role=role,
+                    attempt=healing.attempt,
+                    parent_step_id=history_root_step_id if healing.parent_to_history_root else None,
+                    agent_run_id=agent_run_id,
+                    input_json={"server": step.server, "tool": step.tool, "args": step.args},
+                    output_json={"error": healing.error},
+                    started_at=datetime.now(UTC),
+                    completed_at=datetime.now(UTC),
+                )
+            )
+            if agent_run is not None:
+                agent_run.status = AgentRunStatus.FAILED
+                agent_run.completed_at = datetime.now(UTC)
+                agent_run.result_json = {"error": healing.error}
+            await session.commit()
+            await self._audit_service.record_event(
+                session,
+                event_type="task.failed",
+                actor=role.value,
+                payload={"task_id": str(task_id), "step_id": step.step_id, "error": healing.error},
+                session_id=task.session_id,
+                task_id=task.id,
+            )
+        await self._event_bus.publish(task_id, "task_failed", {"error": healing.error})
+
+    async def _request_operator_review(
+        self,
+        task_id: UUID,
+        step: PlanStep,
+        role: AgentRole,
+        healing: SelfHealingOutcome,
+        handoff: HandoffMessage,
+    ) -> str:
+        async with self._session_factory() as session:
+            task = await session.get(Task, task_id)
+            if task is None:
+                raise RuntimeError("Task not found while requesting specialist approval")
+            context = await self._approval_service.ensure_approval(
+                session,
+                task=task,
+                step=step,
+                assessment=RiskAssessment(
+                    risk_level=RiskLevel.MEDIUM,
+                    reason=healing.approval_reason or f"{role.value} exhausted retries.",
+                    summary=healing.approval_summary or handoff["reason"],
+                ),
+                checkpoint_id=str(task_id),
+            )
+            approval_id = str(context.approval.id)
+
+        if context.created:
+            await self._event_bus.publish(
+                task_id,
+                "approval_requested",
+                {
+                    "approval_id": approval_id,
+                    "risk_level": context.assessment.risk_level.value,
+                    "risk_reason": context.assessment.reason,
+                    "action_summary": context.assessment.summary,
+                },
+            )
+        return approval_id
+
+    async def _get_completed_specialist_result(
+        self,
+        task_id: UUID,
+        role: AgentRole,
+        handoff: HandoffMessage,
+    ) -> dict[str, Any] | None:
+        async with self._session_factory() as session:
+            run = (
+                await session.execute(
+                    select(AgentRun)
+                    .where(
+                        AgentRun.task_id == task_id,
+                        AgentRun.role == role,
+                        AgentRun.status == AgentRunStatus.COMPLETED,
+                        AgentRun.handoff_reason == handoff["reason"],
+                        AgentRun.handoff_payload_json == handoff["payload"],
+                    )
+                    .order_by(AgentRun.started_at.desc()),
+                )
+            ).scalars().first()
+        if run is None or not isinstance(run.result_json, dict):
+            return None
+        return run.result_json
 
     @staticmethod
     def _server_for_role(role: AgentRole) -> str:

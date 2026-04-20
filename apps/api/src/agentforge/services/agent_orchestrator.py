@@ -18,16 +18,17 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from agentforge.config import settings
 from agentforge.guardrails.runner import GuardrailsRunner
-from agentforge.models.approval import ApprovalDecision
+from agentforge.models.approval import ApprovalDecision, RiskLevel
 from agentforge.models.llm_call import LLMCall
 from agentforge.models.task import Task, TaskStatus
 from agentforge.models.task_step import StepStatus, StepType, TaskStep
 from agentforge.models.tool_call import ToolCall
 from agentforge.schemas.task import PlanStep
-from agentforge.services.approval_service import ApprovalService, get_approval_service
+from agentforge.services.approval_service import ApprovalService, RiskAssessment, get_approval_service
 from agentforge.services.audit_service import AuditService
 from agentforge.services.llm_provider import LLMProvider
 from agentforge.services.mcp_client_pool import MCPClientPool
+from agentforge.services.self_healing import SelfHealingWrapper
 from agentforge.services.task_event_bus import TaskEventBus
 
 
@@ -71,11 +72,13 @@ class AgentOrchestrator:
         self._graph: Any | None = None
         self._checkpointer_cm: Any | None = None
         self._graph_lock = asyncio.Lock()
+        self._self_healing = SelfHealingWrapper(llm_provider)
         self._supervisor_graph = SupervisorGraph(
             session_factory=session_factory,
             mcp_pool=mcp_pool,
             event_bus=event_bus,
             audit_service=self._audit_service,
+            approval_service=approval_service,
             llm_provider=llm_provider,
         )
 
@@ -156,13 +159,32 @@ class AgentOrchestrator:
             await asyncio.gather(*pending, return_exceptions=True)
         self._tasks.clear()
         await self._approval_service.close()
+        await self._drain_langgraph_background_tasks()
         if self._checkpointer_cm is not None:
-            await self._checkpointer_cm.__aexit__(None, None, None)
+            try:
+                await self._checkpointer_cm.__aexit__(None, None, None)
+            except ValueError:
+                # LangGraph can leave an async SQLite flush task racing the connection
+                # shutdown on cancellation-heavy tests; the connection is already closing.
+                pass
             self._checkpointer_cm = None
         self._graph = None
 
     async def _run_task(self, task_id: str, *, resume_approval_id: str | None = None) -> None:
         await asyncio.sleep(0.05)
+        if resume_approval_id is not None and await self._is_supervisor_task(UUID(task_id)):
+            should_continue = await self._supervisor_graph.resume_after_approval(UUID(task_id), UUID(resume_approval_id))
+            if not should_continue:
+                return
+            async with self._session_factory() as session:
+                task = await session.get(Task, UUID(task_id))
+                if task is None:
+                    raise RuntimeError("Task not found during supervisor resume")
+                result = await self._supervisor_graph.run(UUID(task_id), task.user_prompt)
+                if result.rejected or result.awaiting_approval:
+                    return
+                return
+
         if resume_approval_id is None:
             current_input: AgentState | Command = await self._load_initial_state(task_id)
         else:
@@ -171,7 +193,7 @@ class AgentOrchestrator:
         try:
             if resume_approval_id is None and self._should_use_supervisor_flow(current_input):
                 result = await self._supervisor_graph.run(UUID(task_id), current_input["user_prompt"])
-                if result.rejected:
+                if result.rejected or result.awaiting_approval:
                     return
                 return
 
@@ -207,6 +229,15 @@ class AgentOrchestrator:
             "rejected": False,
             "input_rails": input_rails,
         }
+
+    async def _is_supervisor_task(self, task_id: UUID) -> bool:
+        async with self._session_factory() as session:
+            task = await session.get(Task, task_id)
+            if task is None:
+                return False
+            if isinstance(task.plan, dict) and "handoffs" in task.plan:
+                return True
+        return False
 
     @staticmethod
     def _should_use_supervisor_flow(state: AgentState | Command) -> bool:
@@ -303,77 +334,55 @@ class AgentOrchestrator:
                 assessment = self._approval_service.classify_tool_call(step)
                 approval_id: str | None = None
                 if assessment.requires_approval:
-                    async with self._session_factory() as session:
-                        task = await session.get(Task, UUID(state["task_id"]))
-                        if task is None:
-                            raise RuntimeError("Task not found during approval request")
-                        approval_context = await self._approval_service.ensure_approval(
-                            session,
-                            task=task,
-                            step=step,
-                            assessment=assessment,
-                            checkpoint_id=state["task_id"],
-                        )
-                        approval_id = str(approval_context.approval.id)
+                    approval_outcome = await self._pause_for_approval(state, step, assessment)
+                    if approval_outcome is not None:
+                        return approval_outcome
+                    approval_id = await self._latest_approval_id(UUID(state["task_id"]))
 
-                    if approval_context.created:
-                        await self._event_bus.publish(
-                            state["task_id"],
-                            "approval_requested",
-                            {
-                                "approval_id": approval_id,
-                                "risk_level": assessment.risk_level.value,
-                                "risk_reason": assessment.reason,
-                                "action_summary": assessment.summary,
-                            },
-                        )
-
-                    interrupt(
-                        {
-                            "approval_id": approval_id,
-                            "risk_level": assessment.risk_level.value,
-                            "risk_reason": assessment.reason,
-                            "action_summary": assessment.summary,
-                        }
+                healing = await self._self_healing.execute(
+                    step=step,
+                    input_payload={"server": step.server, "tool": step.tool, "args": step.args},
+                    execute_fn=lambda: self._mcp_pool.call_tool(step.server or "", step.tool or "", step.args),
+                    user_prompt=state["user_prompt"],
+                    last_output=state.get("last_output"),
+                    kind="tool_call",
+                )
+                if healing.needs_approval:
+                    approval_outcome = await self._pause_for_approval(
+                        state,
+                        step,
+                        RiskAssessment(
+                            risk_level=RiskLevel.MEDIUM,
+                            reason=healing.approval_reason or "Self-healing exhausted retries.",
+                            summary=healing.approval_summary or step.description,
+                        ),
                     )
-
-                    async with self._session_factory() as session:
-                        approval = await self._approval_service.get_by_id(session, UUID(approval_id))
-                        if approval is None:
-                            raise RuntimeError("Approval record disappeared before resume")
-                        if approval.decision == ApprovalDecision.REJECTED:
-                            return {
-                                **state,
-                                "error": approval.rationale or approval.risk_reason,
-                                "rejected": True,
-                                "current_result": {
-                                    "status": StepStatus.FAILED.value,
-                                    "kind": "approval_gate",
-                                    "output": {
-                                        "message": approval.rationale or approval.risk_reason,
-                                        "decision": approval.decision.value,
-                                    },
-                                    "input": {"server": step.server, "tool": step.tool, "args": step.args},
-                                    "approval": {"approval_id": str(approval.id)},
-                                    "duration_ms": int((perf_counter() - started) * 1000),
-                                },
-                            }
-                        await self._approval_service.mark_gate_approved(session, approval)
-                        await session.commit()
-                    await self._event_bus.publish(
-                        state["task_id"],
-                        "approval_resumed",
-                        {"approval_id": approval_id, "decision": ApprovalDecision.APPROVED.value},
+                    if approval_outcome is not None:
+                        approval_outcome["current_result"]["history_entries"] = healing.history_entries
+                        approval_outcome["current_result"]["retry_events"] = healing.retry_events
+                        return approval_outcome
+                    approval_id = await self._latest_approval_id(UUID(state["task_id"]))
+                    healing = await self._self_healing.execute(
+                        step=step,
+                        input_payload={"server": step.server, "tool": step.tool, "args": step.args},
+                        execute_fn=lambda: self._mcp_pool.call_tool(step.server or "", step.tool or "", step.args),
+                        user_prompt=state["user_prompt"],
+                        last_output=state.get("last_output"),
+                        kind="tool_call",
                     )
-
-                result = await self._mcp_pool.call_tool(step.server or "", step.tool or "", step.args)
                 return {
                     **state,
                     "current_result": {
-                        "status": StepStatus.COMPLETED.value,
-                        "kind": "tool_call",
-                        "output": result,
+                        "status": healing.status.value,
+                        "kind": healing.kind,
+                        "output": healing.output,
+                        "error": healing.error,
                         "input": {"server": step.server, "tool": step.tool, "args": step.args},
+                        "attempt": healing.attempt,
+                        "step_type_override": healing.step_type_override.value if healing.step_type_override else None,
+                        "parent_to_history_root": healing.parent_to_history_root,
+                        "history_entries": healing.history_entries,
+                        "retry_events": healing.retry_events,
                         "approval": {"approval_id": approval_id} if approval_id else None,
                         "duration_ms": int((perf_counter() - started) * 1000),
                     },
@@ -388,7 +397,32 @@ class AgentOrchestrator:
                     },
                     ensure_ascii=True,
                 )
-                llm_response = await self._llm_provider.reason_step(prompt_payload)
+                healing = await self._self_healing.execute(
+                    step=step,
+                    input_payload={"prompt": prompt_payload},
+                    execute_fn=lambda: self._llm_provider.reason_step(prompt_payload),
+                    user_prompt=state["user_prompt"],
+                    last_output=state.get("last_output"),
+                    kind="llm_reasoning",
+                )
+                if healing.error and healing.output is None:
+                    return {
+                        **state,
+                        "error": healing.error,
+                        "current_result": {
+                            "status": healing.status.value,
+                            "kind": "llm_reasoning",
+                            "error": healing.error,
+                            "input": {"prompt": prompt_payload},
+                            "attempt": healing.attempt,
+                            "step_type_override": healing.step_type_override.value if healing.step_type_override else None,
+                            "parent_to_history_root": healing.parent_to_history_root,
+                            "history_entries": healing.history_entries,
+                            "retry_events": healing.retry_events,
+                            "duration_ms": int((perf_counter() - started) * 1000),
+                        },
+                    }
+                llm_response = healing.output
                 processed_output = self._guardrails_runner.process_output(llm_response.text)
                 return {
                     **state,
@@ -397,6 +431,11 @@ class AgentOrchestrator:
                         "kind": "llm_reasoning",
                         "output": {"text": processed_output.text},
                         "input": {"prompt": prompt_payload},
+                        "attempt": healing.attempt,
+                        "step_type_override": healing.step_type_override.value if healing.step_type_override else None,
+                        "parent_to_history_root": healing.parent_to_history_root,
+                        "history_entries": healing.history_entries,
+                        "retry_events": healing.retry_events,
                         "llm": {
                             "text": processed_output.text,
                             "prompt_tokens": llm_response.prompt_tokens,
@@ -443,6 +482,13 @@ class AgentOrchestrator:
             if task is None:
                 raise RuntimeError("Task not found during step recording")
 
+            history_root_step_id = await self._persist_history_entries(
+                session=session,
+                task=task,
+                step=step,
+                result=result,
+            )
+
             if result.get("kind") == "approval_gate":
                 approval_payload = result.get("approval") or {}
                 approval_id = approval_payload.get("approval_id")
@@ -480,9 +526,12 @@ class AgentOrchestrator:
             task_step = TaskStep(
                 task_id=task.id,
                 ordinal=await self._approval_service.next_ordinal(session, task.id),
-                step_type=self._step_type_for(result.get("kind") or step.type),
+                step_type=self._step_type_for(result.get("step_type_override") or result.get("kind") or step.type),
                 description=result.get("output", {}).get("message", step.description) if result.get("kind") == "guardrail_block" else step.description,
                 status=StepStatus(result["status"]),
+                agent_role=AgentRole.ORCHESTRATOR,
+                attempt=int(result.get("attempt", 1)),
+                parent_step_id=history_root_step_id if result.get("parent_to_history_root") else None,
                 input_json=result.get("input"),
                 output_json=result.get("output"),
                 started_at=now,
@@ -561,6 +610,8 @@ class AgentOrchestrator:
             else:
                 await session.commit()
 
+            await self._record_retry_events(session, task, step, result.get("retry_events", []))
+
         await self._event_bus.publish(
             state["task_id"],
             "step",
@@ -583,6 +634,7 @@ class AgentOrchestrator:
             **state,
             "cursor": state.get("cursor", 0) + 1,
             "last_output": last_output,
+            "error": result.get("error") or state.get("error"),
             "rejected": state.get("rejected", False),
         }
 
@@ -641,6 +693,187 @@ class AgentOrchestrator:
 
         await self._event_bus.publish(task_id, "task_failed", {"error": error})
 
+    async def _pause_for_approval(
+        self,
+        state: AgentState,
+        step: PlanStep,
+        assessment: RiskAssessment,
+    ) -> AgentState | None:
+        async with self._session_factory() as session:
+            task = await session.get(Task, UUID(state["task_id"]))
+            if task is None:
+                raise RuntimeError("Task not found during approval request")
+            approval_context = await self._approval_service.ensure_approval(
+                session,
+                task=task,
+                step=step,
+                assessment=assessment,
+                checkpoint_id=state["task_id"],
+            )
+            approval_id = str(approval_context.approval.id)
+
+        if approval_context.created:
+            await self._event_bus.publish(
+                state["task_id"],
+                "approval_requested",
+                {
+                    "approval_id": approval_id,
+                    "risk_level": assessment.risk_level.value,
+                    "risk_reason": assessment.reason,
+                    "action_summary": assessment.summary,
+                },
+            )
+
+        interrupt(
+            {
+                "approval_id": approval_id,
+                "risk_level": assessment.risk_level.value,
+                "risk_reason": assessment.reason,
+                "action_summary": assessment.summary,
+            }
+        )
+
+        async with self._session_factory() as session:
+            approval = await self._approval_service.get_by_id(session, UUID(approval_id))
+            if approval is None:
+                raise RuntimeError("Approval record disappeared before resume")
+            if approval.decision == ApprovalDecision.REJECTED:
+                return {
+                    **state,
+                    "error": approval.rationale or approval.risk_reason,
+                    "rejected": True,
+                    "current_result": {
+                        "status": StepStatus.FAILED.value,
+                        "kind": "approval_gate",
+                        "output": {
+                            "message": approval.rationale or approval.risk_reason,
+                            "decision": approval.decision.value,
+                        },
+                        "input": {"server": step.server, "tool": step.tool, "args": step.args},
+                        "approval": {"approval_id": str(approval.id)},
+                    },
+                }
+            await self._approval_service.mark_gate_approved(session, approval)
+            await session.commit()
+
+        await self._event_bus.publish(
+            state["task_id"],
+            "approval_resumed",
+            {"approval_id": approval_id, "decision": ApprovalDecision.APPROVED.value},
+        )
+        return None
+
+    async def _latest_approval_id(self, task_id: UUID) -> str | None:
+        async with self._session_factory() as session:
+            approval = await self._approval_service.get_latest_for_task(session, task_id)
+        return str(approval.id) if approval is not None else None
+
+    async def _drain_langgraph_background_tasks(self) -> None:
+        current_task = asyncio.current_task()
+        for _ in range(5):
+            background_tasks = [
+                task
+                for task in asyncio.all_tasks()
+                if task is not current_task
+                and not task.done()
+                and self._is_langgraph_background_task(task)
+            ]
+            if not background_tasks:
+                return
+            await asyncio.sleep(0)
+            await asyncio.gather(*background_tasks, return_exceptions=True)
+
+    async def _persist_history_entries(
+        self,
+        *,
+        session: AsyncSession,
+        task: Task,
+        step: PlanStep,
+        result: dict[str, Any],
+    ) -> UUID | None:
+        history_root_step_id: UUID | None = None
+        for entry in result.get("history_entries", []):
+            history_step = TaskStep(
+                task_id=task.id,
+                ordinal=await self._approval_service.next_ordinal(session, task.id),
+                step_type=entry["step_type"],
+                description=entry["description"],
+                status=entry["status"],
+                agent_role=AgentRole.ORCHESTRATOR,
+                attempt=int(entry.get("attempt", 1)),
+                parent_step_id=history_root_step_id if entry.get("link_to_history_root") else None,
+                input_json=entry.get("input_json"),
+                output_json=entry.get("output_json"),
+                started_at=datetime.now(UTC),
+                completed_at=datetime.now(UTC),
+            )
+            session.add(history_step)
+            await session.flush()
+            if history_root_step_id is None:
+                history_root_step_id = history_step.id
+
+            if entry["step_type"] in {StepType.TOOL_CALL, StepType.RETRY}:
+                session.add(
+                    ToolCall(
+                        task_step_id=history_step.id,
+                        server_name=step.server or "",
+                        tool_name=step.tool or "",
+                        arguments_json=step.args,
+                        result_json=entry.get("output_json"),
+                        error=(entry.get("output_json") or {}).get("error") if isinstance(entry.get("output_json"), dict) else None,
+                        duration_ms=0,
+                        required_approval=False,
+                        started_at=history_step.started_at,
+                        completed_at=history_step.completed_at,
+                    )
+                )
+            if entry["step_type"] == StepType.REFLECTION:
+                llm_entry = entry.get("llm", {})
+                session.add(
+                    LLMCall(
+                        task_step_id=history_step.id,
+                        provider=self._llm_provider.provider_name,
+                        model=self._llm_provider.model_name,
+                        prompt=llm_entry.get("prompt", ""),
+                        completion=llm_entry.get("completion"),
+                        prompt_tokens=None,
+                        completion_tokens=None,
+                        latency_ms=None,
+                    )
+                )
+        return history_root_step_id
+
+    async def _record_retry_events(
+        self,
+        session: AsyncSession,
+        task: Task,
+        step: PlanStep,
+        retry_events: list[dict[str, Any]],
+    ) -> None:
+        for retry_event in retry_events:
+            await self._audit_service.record_event(
+                session,
+                event_type="agent.retry",
+                actor="system",
+                payload={
+                    "task_id": str(task.id),
+                    "step_id": retry_event["step_id"],
+                    "attempt": retry_event["attempt"],
+                    "error": retry_event["error"],
+                },
+                session_id=task.session_id,
+                task_id=task.id,
+            )
+            await self._event_bus.publish(
+                task.id,
+                "agent_retry",
+                {
+                    "step_id": retry_event["step_id"],
+                    "attempt": retry_event["attempt"],
+                    "error": retry_event["error"],
+                },
+            )
+
     @staticmethod
     def _step_type_for(step_type: str) -> StepType:
         mapping = {
@@ -648,7 +881,11 @@ class AgentOrchestrator:
             "llm_reasoning": StepType.LLM_REASONING,
             "approval_gate": StepType.APPROVAL_GATE,
             "guardrail_block": StepType.GUARDRAIL_BLOCK,
+            "retry": StepType.RETRY,
+            "reflection": StepType.REFLECTION,
         }
+        if isinstance(step_type, StepType):
+            return step_type
         return mapping.get(step_type, StepType.LLM_REASONING)
 
     @staticmethod
@@ -659,6 +896,14 @@ class AgentOrchestrator:
         if isinstance(value, dict) and "text" in value:
             return str(value["text"])
         return json.dumps(value, ensure_ascii=True, indent=2)
+
+    @staticmethod
+    def _is_langgraph_background_task(task: asyncio.Task[Any]) -> bool:
+        coroutine = task.get_coro()
+        qualname = getattr(coroutine, "__qualname__", "")
+        return qualname.endswith("AsyncPregelLoop._checkpointer_put_after_previous") or qualname.endswith(
+            "AsyncSqliteSaver.aput_writes"
+        )
 
     @staticmethod
     def _parse_plan(raw_text: str) -> list[PlanStep]:

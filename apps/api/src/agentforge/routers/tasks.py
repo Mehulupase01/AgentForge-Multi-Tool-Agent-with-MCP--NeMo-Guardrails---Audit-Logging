@@ -32,7 +32,8 @@ audit_service = AuditService()
 
 def to_task_response(task: Task) -> TaskResponse:
     agent_runs = list(task.__dict__.get("agent_runs") or [])
-    supervisor_plan = None
+    serialized_plan = task.plan if isinstance(task.plan, list) else None
+    supervisor_plan = task.plan if isinstance(task.plan, dict) and "handoffs" in task.plan else None
     for agent_run in reversed(agent_runs):
         if agent_run.role == AgentRole.ORCHESTRATOR and isinstance(agent_run.result_json, dict) and "handoffs" in agent_run.result_json:
             supervisor_plan = agent_run.result_json
@@ -41,7 +42,7 @@ def to_task_response(task: Task) -> TaskResponse:
         id=task.id,
         session_id=task.session_id,
         user_prompt=task.user_prompt,
-        plan=task.plan,
+        plan=serialized_plan,
         supervisor_plan=supervisor_plan,
         status=task.status,
         started_at=task.started_at,

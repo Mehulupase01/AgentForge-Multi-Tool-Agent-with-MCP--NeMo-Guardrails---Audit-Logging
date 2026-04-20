@@ -3,6 +3,9 @@ __pycache__/
 *.pyc
 .env
 fixtures/synthetic.sqlite
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
 *.db
 dist/
 .pytest_cache/
