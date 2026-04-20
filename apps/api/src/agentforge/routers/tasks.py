@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Annotated
 from uuid import UUID
@@ -11,19 +12,20 @@ from sqlalchemy.orm import selectinload
 from sse_starlette.sse import EventSourceResponse
 
 from agentforge.models.agent_run import AgentRole, AgentRun
-from agentforge.database import get_db, get_session_factory
+from agentforge.database import get_db
 from agentforge.guardrails import GuardrailsRunner, get_guardrails_runner
 from agentforge.models.session import Session
 from agentforge.models.task import Task, TaskStatus
 from agentforge.models.task_step import StepStatus, StepType, TaskStep
 from agentforge.schemas.common import Envelope, Pagination
 from agentforge.schemas.agent import AgentRunResponse, AgentRunSummary
-from agentforge.schemas.task import TaskCreate, TaskResponse, TaskStepResponse
+from agentforge.schemas.task import ReplayRequest, ReplayResponse, TaskCreate, TaskResponse, TaskStepResponse
 from agentforge.services.agent_orchestrator import AgentOrchestrator, get_agent_orchestrator
 from agentforge.services.approval_service import ApprovalService, get_approval_service
 from agentforge.services.audit_service import AuditService
 from agentforge.services.llm_provider import LLMProvider, get_llm_provider
 from agentforge.services.mcp_client_pool import MCPClientPool, get_mcp_client_pool
+from agentforge.services.replay_service import ReplayConflictError, ReplayService
 from agentforge.services.task_event_bus import TaskEventBus, get_task_event_bus
 
 router = APIRouter(prefix="/api/v1", tags=["tasks"])
@@ -352,3 +354,54 @@ async def resume_task(
     await orchestrator.resume_task(task.id)
     task = await require_task(db, task_id)
     return to_task_response(task)
+
+
+@router.post("/tasks/{task_id}/replay", response_model=ReplayResponse, status_code=status.HTTP_202_ACCEPTED)
+async def replay_task(
+    task_id: UUID,
+    body: ReplayRequest,
+    orchestrator: Annotated[AgentOrchestrator, Depends(orchestrator_dependency)],
+    approval_service: Annotated[ApprovalService, Depends(get_approval_service)],
+) -> ReplayResponse:
+    await orchestrator.wait_until_idle(task_id)
+    async with orchestrator.session_factory() as replay_db:
+        await require_task(replay_db, task_id)
+        replay_service = ReplayService(
+            session_factory=orchestrator.session_factory,
+            approval_service=approval_service,
+            audit_service=audit_service,
+        )
+        try:
+            result = await replay_service.prepare_replay_with_session(replay_db, task_id)
+        except ReplayConflictError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "code": "CONFLICT",
+                    "message": str(exc),
+                    "detail": {"task_id": str(task_id), "from_checkpoint": body.from_checkpoint},
+                },
+            ) from exc
+        if result.skipped_completed_steps == 0:
+            for _ in range(3):
+                await asyncio.sleep(0.05)
+                recounted = await replay_service.recount_skipped_completed_steps(task_id)
+                if recounted > 0:
+                    result.skipped_completed_steps = recounted
+                    break
+
+    if result.status == TaskStatus.AWAITING_APPROVAL:
+        return ReplayResponse(
+            task_id=result.task_id,
+            status=result.status,
+            skipped_completed_steps=result.skipped_completed_steps,
+            approval_id=result.approval_id,
+        )
+
+    orchestrator.replay_task(task_id)
+    return ReplayResponse(
+        task_id=result.task_id,
+        status=result.status,
+        skipped_completed_steps=result.skipped_completed_steps,
+        approval_id=result.approval_id,
+    )

@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     github_token: str | None = None
 
     orchestrator_checkpoint_path: str = "runtime/orchestrator_checkpoints.sqlite"
+    replay_max_checkpoint_age_hours: int = 72
 
     agentforge_api_url: str = "http://api:8000"
     agentforge_api_key: str = "dev-key"

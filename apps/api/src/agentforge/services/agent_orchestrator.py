@@ -28,6 +28,7 @@ from agentforge.services.approval_service import ApprovalService, RiskAssessment
 from agentforge.services.audit_service import AuditService
 from agentforge.services.llm_provider import LLMProvider
 from agentforge.services.mcp_client_pool import MCPClientPool
+from agentforge.services.replay_service import ReplayService
 from agentforge.services.self_healing import SelfHealingWrapper
 from agentforge.services.task_event_bus import TaskEventBus
 
@@ -42,6 +43,7 @@ class AgentState(TypedDict, total=False):
     final_response: str | None
     error: str | None
     rejected: bool
+    replaying: bool
     current_step: dict[str, Any] | None
     current_result: dict[str, Any] | None
 
@@ -73,6 +75,11 @@ class AgentOrchestrator:
         self._checkpointer_cm: Any | None = None
         self._graph_lock = asyncio.Lock()
         self._self_healing = SelfHealingWrapper(llm_provider)
+        self._replay_service = ReplayService(
+            session_factory=session_factory,
+            approval_service=approval_service,
+            audit_service=self._audit_service,
+        )
         self._supervisor_graph = SupervisorGraph(
             session_factory=session_factory,
             mcp_pool=mcp_pool,
@@ -81,6 +88,10 @@ class AgentOrchestrator:
             approval_service=approval_service,
             llm_provider=llm_provider,
         )
+
+    @property
+    def session_factory(self) -> async_sessionmaker[AsyncSession]:
+        return self._session_factory
 
     async def _ensure_graph(self):
         if self._graph is not None:
@@ -143,6 +154,11 @@ class AgentOrchestrator:
         if approval is None:
             return False
 
+        if await self._is_supervisor_task(task_id):
+            await self.wait_until_idle(task_id)
+            self.start_task(task_id, resume_approval_id=approval.id)
+            return True
+
         task_key = str(task_id)
         if task_key in self._tasks and not self._tasks[task_key].done():
             await self._approval_service.signal_resume(task_id, approval.id)
@@ -150,6 +166,24 @@ class AgentOrchestrator:
 
         self.start_task(task_id, resume_approval_id=approval.id)
         return True
+
+    async def wait_until_idle(self, task_id: UUID | str) -> None:
+        task_key = str(task_id)
+        background = self._tasks.get(task_key)
+        if background is None:
+            return
+        if not background.done():
+            await asyncio.gather(background, return_exceptions=True)
+        self._tasks.pop(task_key, None)
+        self._pending_inputs.pop(task_key, None)
+
+    def replay_task(self, task_id: UUID) -> None:
+        task_key = str(task_id)
+        if task_key in self._tasks and not self._tasks[task_key].done():
+            return
+        background = asyncio.create_task(self._run_replay_task(task_key))
+        self._tasks[task_key] = background
+        background.add_done_callback(lambda _: self._tasks.pop(task_key, None))
 
     async def close(self) -> None:
         pending = [task for task in self._tasks.values() if not task.done()]
@@ -210,6 +244,35 @@ class AgentOrchestrator:
         except Exception as exc:
             await self._fail_task(task_id, str(exc), step_id="plan")
 
+    async def _run_replay_task(self, task_id: str) -> None:
+        await asyncio.sleep(0.05)
+        try:
+            async with self._session_factory() as session:
+                task = await session.get(Task, UUID(task_id))
+                if task is None:
+                    raise RuntimeError("Task not found during replay")
+                if isinstance(task.plan, dict) and "handoffs" in task.plan:
+                    result = await self._supervisor_graph.run(task.id, task.user_prompt)
+                    if result.rejected or result.awaiting_approval:
+                        return
+                    return
+
+            state = await self._load_replay_state(task_id)
+            state = await self._plan(state)
+            while True:
+                state = await self._next_step(state)
+                if state.get("current_step") is None:
+                    break
+                state = await self._execute_step(state)
+                state = await self._record_step(state)
+                if state.get("error") or state.get("rejected"):
+                    break
+
+            if not state.get("error") and not state.get("rejected"):
+                await self._finalize(state)
+        except Exception as exc:
+            await self._fail_task(task_id, str(exc), step_id="replay")
+
     async def _load_initial_state(self, task_id: str) -> AgentState:
         async with self._session_factory() as session:
             task = await session.get(Task, UUID(task_id))
@@ -229,6 +292,26 @@ class AgentOrchestrator:
             "rejected": False,
             "input_rails": input_rails,
         }
+
+    async def _load_replay_state(self, task_id: str) -> AgentState:
+        async with self._session_factory() as session:
+            task = await session.get(Task, UUID(task_id))
+            if task is None:
+                raise RuntimeError("Task not found during replay startup")
+            if not isinstance(task.plan, list):
+                raise RuntimeError("Replay requires a persisted linear plan")
+            return {
+                "task_id": task_id,
+                "user_prompt": task.user_prompt,
+                "plan": task.plan,
+                "cursor": 0,
+                "last_output": None,
+                "final_response": None,
+                "error": None,
+                "rejected": False,
+                "input_rails": {"pii": {"redacted": False, "entities": []}},
+                "replaying": True,
+            }
 
     async def _is_supervisor_task(self, task_id: UUID) -> bool:
         async with self._session_factory() as session:
@@ -258,6 +341,16 @@ class AgentOrchestrator:
         return matched_roles >= 2
 
     async def _plan(self, state: AgentState) -> AgentState:
+        if state.get("plan"):
+            async with self._session_factory() as session:
+                task = await session.get(Task, UUID(state["task_id"]))
+                if task is None:
+                    raise RuntimeError("Task not found during planning")
+                task.status = TaskStatus.EXECUTING
+                task.started_at = task.started_at or datetime.now(UTC)
+                await session.commit()
+            return {**state, "cursor": 0}
+
         response = await self._llm_provider.generate_plan(state["user_prompt"])
         parsed = self._parse_plan(response.text)
 
@@ -311,6 +404,11 @@ class AgentOrchestrator:
 
     async def _execute_step(self, state: AgentState) -> AgentState:
         step = PlanStep.model_validate(state["current_step"])
+        logical_ordinal = int(state.get("cursor", 0)) + 1
+        if state.get("replaying"):
+            cached_result = await self._load_cached_replay_result(UUID(state["task_id"]), logical_ordinal, step)
+            if cached_result is not None:
+                return {**state, "current_result": cached_result}
         started = perf_counter()
         try:
             if step.type == "tool_call":
@@ -328,6 +426,7 @@ class AgentOrchestrator:
                                 "detail": tool_check.detail,
                             },
                             "duration_ms": int((perf_counter() - started) * 1000),
+                            "logical_ordinal": logical_ordinal,
                         },
                     }
 
@@ -385,6 +484,7 @@ class AgentOrchestrator:
                         "retry_events": healing.retry_events,
                         "approval": {"approval_id": approval_id} if approval_id else None,
                         "duration_ms": int((perf_counter() - started) * 1000),
+                        "logical_ordinal": logical_ordinal,
                     },
                 }
 
@@ -420,6 +520,7 @@ class AgentOrchestrator:
                             "history_entries": healing.history_entries,
                             "retry_events": healing.retry_events,
                             "duration_ms": int((perf_counter() - started) * 1000),
+                            "logical_ordinal": logical_ordinal,
                         },
                     }
                 llm_response = healing.output
@@ -444,6 +545,7 @@ class AgentOrchestrator:
                             "output_rails_json": processed_output.output_rails_json(),
                         },
                         "duration_ms": int((perf_counter() - started) * 1000),
+                        "logical_ordinal": logical_ordinal,
                     },
                 }
 
@@ -455,6 +557,7 @@ class AgentOrchestrator:
                     "output": {"message": "Approval gate step placeholder was skipped."},
                     "input": step.args,
                     "duration_ms": int((perf_counter() - started) * 1000),
+                    "logical_ordinal": logical_ordinal,
                 },
             }
         except GraphInterrupt:
@@ -469,6 +572,7 @@ class AgentOrchestrator:
                     "error": str(exc),
                     "input": {"server": step.server, "tool": step.tool, "args": step.args},
                     "duration_ms": int((perf_counter() - started) * 1000),
+                    "logical_ordinal": logical_ordinal,
                 },
             }
 
@@ -476,6 +580,27 @@ class AgentOrchestrator:
         step = PlanStep.model_validate(state["current_step"])
         result = state["current_result"] or {}
         now = datetime.now(UTC)
+
+        if result.get("from_cache"):
+            await self._event_bus.publish(
+                state["task_id"],
+                "task_replayed",
+                {
+                    "step_id": step.step_id,
+                    "cached_step_id": result.get("cached_step_id"),
+                    "logical_ordinal": result.get("logical_ordinal"),
+                },
+            )
+            last_output = state.get("last_output")
+            if result.get("output") is not None:
+                last_output = {"step_id": step.step_id, "type": step.type, "value": result["output"]}
+            return {
+                **state,
+                "cursor": state.get("cursor", 0) + 1,
+                "last_output": last_output,
+                "error": state.get("error"),
+                "rejected": state.get("rejected", False),
+            }
 
         async with self._session_factory() as session:
             task = await session.get(Task, UUID(state["task_id"]))
@@ -532,7 +657,12 @@ class AgentOrchestrator:
                 agent_role=AgentRole.ORCHESTRATOR,
                 attempt=int(result.get("attempt", 1)),
                 parent_step_id=history_root_step_id if result.get("parent_to_history_root") else None,
-                input_json=result.get("input"),
+                input_json=self._with_idempotency_key(
+                    task_id=task.id,
+                    logical_ordinal=int(result.get("logical_ordinal", state.get("cursor", 0) + 1)),
+                    step=step,
+                    payload=result.get("input"),
+                ),
                 output_json=result.get("output"),
                 started_at=now,
                 completed_at=now,
@@ -768,6 +898,42 @@ class AgentOrchestrator:
             approval = await self._approval_service.get_latest_for_task(session, task_id)
         return str(approval.id) if approval is not None else None
 
+    async def _load_cached_replay_result(
+        self,
+        task_id: UUID,
+        logical_ordinal: int,
+        step: PlanStep,
+    ) -> dict[str, Any] | None:
+        idempotency_key = self._replay_service.idempotency_key_for_step(
+            task_id=task_id,
+            ordinal=logical_ordinal,
+            step=step,
+        )
+        cached_step = None
+        for attempt in range(3):
+            async with self._session_factory() as session:
+                cached_step = await self._replay_service.find_cached_completed_step(
+                    session=session,
+                    task_id=task_id,
+                    idempotency_key=idempotency_key,
+                )
+            if cached_step is not None:
+                break
+            if attempt < 2:
+                await asyncio.sleep(0.05)
+        if cached_step is None:
+            return None
+        return {
+            "status": cached_step.status.value,
+            "kind": step.type,
+            "output": cached_step.output_json,
+            "input": cached_step.input_json,
+            "attempt": cached_step.attempt,
+            "logical_ordinal": logical_ordinal,
+            "from_cache": True,
+            "cached_step_id": str(cached_step.id),
+        }
+
     async def _drain_langgraph_background_tasks(self) -> None:
         current_task = asyncio.current_task()
         for _ in range(5):
@@ -896,6 +1062,22 @@ class AgentOrchestrator:
         if isinstance(value, dict) and "text" in value:
             return str(value["text"])
         return json.dumps(value, ensure_ascii=True, indent=2)
+
+    def _with_idempotency_key(
+        self,
+        *,
+        task_id: UUID,
+        logical_ordinal: int,
+        step: PlanStep,
+        payload: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        enriched = dict(payload or {})
+        enriched["idempotency_key"] = self._replay_service.idempotency_key_for_step(
+            task_id=task_id,
+            ordinal=logical_ordinal,
+            step=step,
+        )
+        return enriched
 
     @staticmethod
     def _is_langgraph_background_task(task: asyncio.Task[Any]) -> bool:

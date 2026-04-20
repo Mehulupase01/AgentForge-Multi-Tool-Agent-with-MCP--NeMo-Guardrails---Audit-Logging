@@ -142,6 +142,35 @@ async def wait_for_status(client: AsyncClient, task_id: str, *terminal_statuses:
     raise TimeoutError(f"Timed out waiting for task {task_id} to reach {terminal_statuses}")
 
 
+async def wait_for_agent_roles(client: AsyncClient, task_id: str, expected_roles: set[str]) -> list[str]:
+    deadline = asyncio.get_running_loop().time() + 5
+    while asyncio.get_running_loop().time() < deadline:
+        response = await client.get(f"/api/v1/tasks/{task_id}/agents")
+        payload = response.json()
+        roles = [item["role"] for item in payload["data"]]
+        if expected_roles.issubset(set(roles)):
+            return roles
+        await asyncio.sleep(0.05)
+    raise TimeoutError(f"Timed out waiting for task {task_id} to expose agent roles {sorted(expected_roles)}")
+
+
+async def wait_for_task_approval(session_factory, task_id: str) -> Approval:
+    deadline = asyncio.get_running_loop().time() + 5
+    while asyncio.get_running_loop().time() < deadline:
+        async with session_factory() as session:
+            approval = (
+                await session.execute(
+                    select(Approval)
+                    .where(Approval.task_id == UUID(task_id))
+                    .order_by(Approval.requested_at.desc())
+                )
+            ).scalars().first()
+        if approval is not None:
+            return approval
+        await asyncio.sleep(0.05)
+    raise TimeoutError(f"Timed out waiting for an approval row for task {task_id}")
+
+
 @pytest_asyncio.fixture
 async def guardrails_runner(tmp_path: Path) -> GuardrailsRunner:
     return GuardrailsRunner(tool_allowlist=ToolAllowlist(write_allowlist(tmp_path / "tool_allowlist.yml")))
@@ -215,9 +244,7 @@ async def test_supervisor_routes_two_specialists(supervisor_client: AsyncClient,
     assert "Researcher found" in payload["final_response"]
     assert "Analyst returned" in payload["final_response"]
 
-    agents_response = await supervisor_client.get(f"/api/v1/tasks/{task_id}/agents")
-    assert agents_response.status_code == 200
-    roles = [item["role"] for item in agents_response.json()["data"]]
+    roles = await wait_for_agent_roles(supervisor_client, task_id, {"researcher", "analyst"})
     assert roles.count("researcher") == 1
     assert roles.count("analyst") == 1
 
@@ -380,15 +407,7 @@ async def test_supervisor_resume_after_retry_escalation(session_factory, guardra
         payload = await wait_for_status(client, task_id, "awaiting_approval")
         assert payload["status"] == "awaiting_approval"
 
-        async with session_factory() as session:
-            approval_row = (
-                await session.execute(
-                    select(Approval)
-                    .where(Approval.task_id == UUID(task_id))
-                    .order_by(Approval.requested_at.desc())
-                )
-            ).scalars().first()
-        assert approval_row is not None
+        approval_row = await wait_for_task_approval(session_factory, task_id)
 
         decision_response = await client.post(
             f"/api/v1/approvals/{approval_row.id}/decision",

@@ -16,6 +16,10 @@ class TaskCreate(BaseModel):
     user_prompt: str = Field(min_length=1)
 
 
+class ReplayRequest(BaseModel):
+    from_checkpoint: str | None = None
+
+
 class PlanStep(BaseModel):
     step_id: str
     type: Literal["tool_call", "llm_reasoning", "approval_gate"]
@@ -49,6 +53,13 @@ class TaskResponse(BaseModel):
     error: str | None = None
     checkpoint_id: str | None = None
     agent_runs: list[AgentRunSummary] = Field(default_factory=list)
+
+
+class ReplayResponse(BaseModel):
+    task_id: UUID
+    status: TaskStatus
+    skipped_completed_steps: int = 0
+    approval_id: UUID | None = None
 
 
 class TaskStepResponse(BaseModel):
