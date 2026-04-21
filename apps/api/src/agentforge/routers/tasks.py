@@ -44,6 +44,7 @@ def to_task_response(task: Task) -> TaskResponse:
     return TaskResponse(
         id=task.id,
         session_id=task.session_id,
+        trigger_event_id=task.trigger_event_id,
         user_prompt=task.user_prompt,
         plan=serialized_plan,
         supervisor_plan=supervisor_plan,

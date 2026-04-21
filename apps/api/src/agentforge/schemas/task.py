@@ -43,6 +43,7 @@ class PlanStep(BaseModel):
 class TaskResponse(BaseModel):
     id: UUID
     session_id: UUID
+    trigger_event_id: UUID | None = None
     user_prompt: str
     plan: list[PlanStep] | None = None
     supervisor_plan: dict[str, Any] | None = None

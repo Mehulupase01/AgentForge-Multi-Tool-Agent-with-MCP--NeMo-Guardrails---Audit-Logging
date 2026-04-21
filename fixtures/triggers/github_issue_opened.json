@@ -1,0 +1,10 @@
+{
+  "action": "opened",
+  "issue": {
+    "title": "Null ptr",
+    "body": "Crash occurs when summary payload is empty."
+  },
+  "repository": {
+    "full_name": "acme/agentforge"
+  }
+}

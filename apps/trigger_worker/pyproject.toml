@@ -1,0 +1,29 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agentforge-trigger-worker"
+version = "0.1.0"
+description = "Trigger worker sidecar for AgentForge"
+readme = "../../README.md"
+requires-python = "==3.12.*"
+license = { text = "MIT" }
+authors = [{ name = "Mehul Upase" }]
+dependencies = [
+  "fastapi==0.115.5",
+  "uvicorn[standard]==0.32.1",
+  "apscheduler==3.10.4",
+  "httpx==0.28.1",
+]
+
+[dependency-groups]
+test = [
+  "pytest==8.3.4",
+]
+
+[tool.uv]
+default-groups = ["test"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/trigger_worker"]

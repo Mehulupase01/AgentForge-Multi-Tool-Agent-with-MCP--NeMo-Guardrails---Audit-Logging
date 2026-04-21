@@ -4,9 +4,11 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
+import httpx
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from agentforge.config import settings
 from agentforge.database import get_db
 from agentforge.services.mcp_client_pool import MCPClientPool, get_mcp_client_pool
 
@@ -43,6 +45,14 @@ async def readiness(
 
     server_statuses = await pool.connect_all()
     mcp_servers = {name: info.status for name, info in server_statuses.items()}
+    worker_status = "disabled"
+    if settings.trigger_worker_url:
+        try:
+            async with httpx.AsyncClient(timeout=3.0) as client:
+                response = await client.get(settings.trigger_worker_url)
+                worker_status = "ok" if response.status_code == 200 else "unreachable"
+        except Exception:
+            worker_status = "unreachable"
     if any(info.status != "ok" for info in server_statuses.values()):
         return JSONResponse(
             status_code=503,
@@ -50,6 +60,17 @@ async def readiness(
                 "status": "degraded",
                 "database": "ok",
                 "mcp_servers": mcp_servers,
+                "workers": {"trigger_worker": worker_status},
+            },
+        )
+    if settings.trigger_worker_url and worker_status != "ok":
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "degraded",
+                "database": "ok",
+                "mcp_servers": mcp_servers,
+                "workers": {"trigger_worker": worker_status},
             },
         )
 
@@ -59,5 +80,6 @@ async def readiness(
             "status": "ok",
             "database": "ok",
             "mcp_servers": mcp_servers,
+            "workers": {"trigger_worker": worker_status},
         },
     )

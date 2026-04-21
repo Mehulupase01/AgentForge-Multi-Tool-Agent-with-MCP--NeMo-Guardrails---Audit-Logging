@@ -10,6 +10,7 @@ from agentforge.models.skill import Skill, SkillInvocation
 from agentforge.models.task import Task, TaskStatus
 from agentforge.models.task_step import StepStatus, StepType, TaskStep
 from agentforge.models.tool_call import ToolCall
+from agentforge.models.trigger import Trigger, TriggerEvent, TriggerEventStatus, TriggerSource, TriggerStatus
 
 __all__ = [
     "Approval",
@@ -38,4 +39,9 @@ __all__ = [
     "TaskStatus",
     "TaskStep",
     "ToolCall",
+    "Trigger",
+    "TriggerEvent",
+    "TriggerEventStatus",
+    "TriggerSource",
+    "TriggerStatus",
 ]

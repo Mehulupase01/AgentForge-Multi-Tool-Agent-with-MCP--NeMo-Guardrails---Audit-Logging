@@ -1,5 +1,5 @@
 [tool.uv.workspace]
-members = ["apps/api", "apps/mcp_servers/*", "apps/ui", "apps/cli"]
+members = ["apps/api", "apps/mcp_servers/*", "apps/ui", "apps/cli", "apps/trigger_worker"]
 
 [tool.pytest.ini_options]
 asyncio_default_fixture_loop_scope = "function"

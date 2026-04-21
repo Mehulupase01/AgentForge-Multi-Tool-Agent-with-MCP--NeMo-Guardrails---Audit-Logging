@@ -8,6 +8,7 @@ from agentforge.schemas.redteam import RedteamResultResponse, RedteamRunRequest,
 from agentforge.schemas.session import SessionCreate, SessionResponse
 from agentforge.schemas.skill import SkillInvocationResponse, SkillReloadResponse, SkillResponse
 from agentforge.schemas.task import PlanStep, TaskCreate, TaskResponse, TaskStepResponse
+from agentforge.schemas.trigger import TriggerCreate, TriggerEventResponse, TriggerResponse, TriggerUpdate, TriggerWebhookResponse
 
 __all__ = [
     "ApprovalDecisionRequest",
@@ -36,4 +37,9 @@ __all__ = [
     "TaskCreate",
     "TaskResponse",
     "TaskStepResponse",
+    "TriggerCreate",
+    "TriggerEventResponse",
+    "TriggerResponse",
+    "TriggerUpdate",
+    "TriggerWebhookResponse",
 ]

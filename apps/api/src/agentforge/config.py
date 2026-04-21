@@ -27,9 +27,11 @@ class Settings(BaseSettings):
     synthetic_db_path: str = "fixtures/synthetic.sqlite"
     skills_path: str = "apps/api/src/agentforge/skills"
     github_token: str | None = None
+    github_webhook_secret: str | None = None
 
     orchestrator_checkpoint_path: str = "runtime/orchestrator_checkpoints.sqlite"
     replay_max_checkpoint_age_hours: int = 72
+    trigger_worker_url: str | None = None
 
     agentforge_api_url: str = "http://api:8000"
     agentforge_api_key: str = "dev-key"

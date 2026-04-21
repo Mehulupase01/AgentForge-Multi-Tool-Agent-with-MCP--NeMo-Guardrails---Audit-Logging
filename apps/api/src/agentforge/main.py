@@ -24,6 +24,7 @@ from agentforge.routers.redteam import router as redteam_router
 from agentforge.routers.sessions import router as sessions_router
 from agentforge.routers.skills import router as skills_router
 from agentforge.routers.tasks import router as tasks_router
+from agentforge.routers.triggers import router as triggers_router
 import agentforge.services.agent_orchestrator as agent_orchestrator_service
 from agentforge.services.mcp_client_pool import get_mcp_client_pool
 from agentforge.services.skills_registry import get_skills_registry
@@ -141,6 +142,7 @@ def create_app() -> FastAPI:
     app.include_router(redteam_router, dependencies=[Depends(require_api_key)])
     app.include_router(skills_router, dependencies=[Depends(require_api_key)])
     app.include_router(tasks_router, dependencies=[Depends(require_api_key)])
+    app.include_router(triggers_router)
 
     return app
 

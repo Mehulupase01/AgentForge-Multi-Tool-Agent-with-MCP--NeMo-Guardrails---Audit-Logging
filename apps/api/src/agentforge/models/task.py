@@ -48,6 +48,7 @@ class Task(Base, TimestampMixin):
     final_response: Mapped[str | None] = mapped_column(Text, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     checkpoint_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    trigger_event_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
 
     session: Mapped["Session"] = relationship(back_populates="tasks")
     agent_runs: Mapped[list["AgentRun"]] = relationship(
@@ -74,4 +75,5 @@ class Task(Base, TimestampMixin):
     __table_args__ = (
         Index("ix_tasks_session_id", "session_id"),
         Index("ix_tasks_status", "status"),
+        Index("ix_tasks_trigger_event_id", "trigger_event_id"),
     )
