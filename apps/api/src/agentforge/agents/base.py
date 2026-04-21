@@ -79,9 +79,9 @@ AGENT_CAPABILITIES: dict[AgentRole, AgentCapability] = {
     ),
     AgentRole.SECURITY_OFFICER: AgentCapability(
         role=AgentRole.SECURITY_OFFICER,
-        description="Placeholder in Phase 11; review functionality is fully wired in Phase 15.",
+        description="Performs contextual peer review on plans, risky tool calls, and sensitive long-form outputs.",
         tool_scope=(),
         skills=(),
-        policy_summary="No tools; Phase 11 placeholder approves everything.",
+        policy_summary="No tools; may only review, approve, reject, or flag targets with rationale.",
     ),
 }

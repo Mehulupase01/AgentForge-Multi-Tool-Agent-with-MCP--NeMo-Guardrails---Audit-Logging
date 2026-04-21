@@ -6,6 +6,7 @@ from uuid import UUID
 from pydantic import BaseModel
 
 from agentforge.models.agent_run import AgentRole, AgentRunStatus
+from agentforge.models.review_record import ReviewTargetType, ReviewVerdict
 
 
 class AgentRunSummary(BaseModel):
@@ -40,3 +41,18 @@ class AgentCapabilitiesResponse(BaseModel):
     tools: list[str]
     skills: list[str]
     policy_summary: str
+
+
+class ReviewRecordSummary(BaseModel):
+    id: UUID
+    target_type: ReviewTargetType
+    target_id: UUID
+    reviewer_role: str
+    verdict: ReviewVerdict
+    rationale: str
+    reviewed_at: datetime
+
+
+class ReviewRecordResponse(ReviewRecordSummary):
+    task_id: UUID
+    evidence_json: dict | None = None

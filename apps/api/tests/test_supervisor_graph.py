@@ -133,6 +133,7 @@ def write_allowlist(path: Path) -> Path:
 
 async def wait_for_status(client: AsyncClient, task_id: str, *terminal_statuses: str) -> dict:
     deadline = asyncio.get_running_loop().time() + 20
+    await asyncio.sleep(0.35)
     while asyncio.get_running_loop().time() < deadline:
         response = await client.get(f"/api/v1/tasks/{task_id}")
         payload = response.json()

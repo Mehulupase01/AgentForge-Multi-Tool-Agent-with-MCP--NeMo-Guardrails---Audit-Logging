@@ -1,4 +1,5 @@
 from agentforge.schemas.approval import ApprovalDecisionRequest, ApprovalResponse
+from agentforge.schemas.agent import ReviewRecordResponse, ReviewRecordSummary
 from agentforge.schemas.audit import AuditEventResponse, IntegrityResponse
 from agentforge.schemas.common import Envelope, ErrorBody, ErrorResponse, Pagination
 from agentforge.schemas.corpus import CorpusDocumentResponse, ReindexResponse
@@ -24,6 +25,8 @@ __all__ = [
     "RedteamResultResponse",
     "RedteamRunRequest",
     "RedteamRunResponse",
+    "ReviewRecordResponse",
+    "ReviewRecordSummary",
     "ReindexResponse",
     "SessionCreate",
     "SessionResponse",

@@ -14,11 +14,12 @@ from sse_starlette.sse import EventSourceResponse
 from agentforge.models.agent_run import AgentRole, AgentRun
 from agentforge.database import get_db
 from agentforge.guardrails import GuardrailsRunner, get_guardrails_runner
+from agentforge.models.review_record import ReviewRecord
 from agentforge.models.session import Session
 from agentforge.models.task import Task, TaskStatus
 from agentforge.models.task_step import StepStatus, StepType, TaskStep
 from agentforge.schemas.common import Envelope, Pagination
-from agentforge.schemas.agent import AgentRunResponse, AgentRunSummary
+from agentforge.schemas.agent import AgentRunResponse, AgentRunSummary, ReviewRecordResponse
 from agentforge.schemas.task import ReplayRequest, ReplayResponse, TaskCreate, TaskResponse, TaskStepResponse
 from agentforge.services.agent_orchestrator import AgentOrchestrator, get_agent_orchestrator
 from agentforge.services.approval_service import ApprovalService, get_approval_service
@@ -97,6 +98,20 @@ def to_agent_run_response(agent_run: AgentRun) -> AgentRunResponse:
         completed_at=agent_run.completed_at,
         status=agent_run.status,
         result_json=agent_run.result_json,
+    )
+
+
+def to_review_record_response(record: ReviewRecord) -> ReviewRecordResponse:
+    return ReviewRecordResponse(
+        id=record.id,
+        task_id=record.task_id,
+        target_type=record.target_type,
+        target_id=record.target_id,
+        reviewer_role=record.reviewer_role,
+        verdict=record.verdict,
+        rationale=record.rationale,
+        evidence_json=record.evidence_json,
+        reviewed_at=record.reviewed_at,
     )
 
 
@@ -315,6 +330,38 @@ async def list_task_agents(
     )
     return Envelope(
         data=[to_agent_run_response(run) for run in runs],
+        meta=Pagination(page=page, per_page=per_page, total=total),
+    )
+
+
+@router.get("/tasks/{task_id}/reviews", response_model=Envelope[ReviewRecordResponse])
+async def list_task_reviews(
+    task_id: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    page: int = Query(default=1, ge=1),
+    per_page: int = Query(default=50, ge=1, le=200),
+) -> Envelope[ReviewRecordResponse]:
+    await require_task(db, task_id)
+    total = int(
+        (
+            await db.execute(
+                select(func.count()).select_from(ReviewRecord).where(ReviewRecord.task_id == task_id),
+            )
+        ).scalar_one()
+    )
+    records = list(
+        (
+            await db.execute(
+                select(ReviewRecord)
+                .where(ReviewRecord.task_id == task_id)
+                .order_by(ReviewRecord.reviewed_at.asc())
+                .offset((page - 1) * per_page)
+                .limit(per_page),
+            )
+        ).scalars()
+    )
+    return Envelope(
+        data=[to_review_record_response(record) for record in records],
         meta=Pagination(page=page, per_page=per_page, total=total),
     )
 

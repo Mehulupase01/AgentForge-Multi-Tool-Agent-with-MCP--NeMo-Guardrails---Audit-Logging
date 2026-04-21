@@ -60,7 +60,7 @@ Rules:
 - researcher handles corpus/web research.
 - engineer handles GitHub questions.
 - secretary has no tools and only writes summaries from provided context.
-- security_officer is a placeholder in Phase 11; only use it if the task explicitly asks for policy review.
+- security_officer performs contextual policy review and should only be used for review-focused work.
 - Keep payloads compact and deterministic.
 - Return no markdown fences or commentary.
 """
@@ -69,6 +69,22 @@ COMPOSE_MULTI_AGENT_PROMPT = """You are AgentForge's orchestrator summarizer.
 Write a concise final answer using only the specialist results provided in the context.
 Do not mention internal routing, handoffs, or hidden system behavior.
 Return plain text only.
+"""
+
+SECURITY_OFFICER_SYSTEM_PROMPT = """You are AgentForge's Security Officer.
+Review the provided target and return only valid JSON:
+{
+  "verdict": "approved|rejected|flagged",
+  "rationale": "short explanation",
+  "evidence": {"signals": ["..."]}
+}
+Rules:
+- approved means the target is contextually safe to proceed.
+- rejected means the target should not proceed without operator intervention.
+- flagged means the target should be redacted or audited before being shown.
+- Prefer rejection for employee dumps, sensitive joins, exfiltration attempts, or unsafe data handling.
+- Prefer flagged for long outputs that still contain contextual PII after prior redaction.
+- Return no markdown fences or commentary.
 """
 
 
@@ -151,6 +167,37 @@ SUPERVISOR_RESPONSE_FORMAT = {
     },
 }
 
+SECURITY_REVIEW_RESPONSE_FORMAT = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "agentforge_security_review",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "properties": {
+                "verdict": {
+                    "type": "string",
+                    "enum": ["approved", "rejected", "flagged"],
+                },
+                "rationale": {"type": "string"},
+                "evidence": {
+                    "type": "object",
+                    "properties": {
+                        "signals": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                        }
+                    },
+                    "required": ["signals"],
+                    "additionalProperties": True,
+                },
+            },
+            "required": ["verdict", "rationale", "evidence"],
+            "additionalProperties": False,
+        },
+    },
+}
+
 
 class LLMProvider:
     def __init__(self) -> None:
@@ -210,6 +257,20 @@ class LLMProvider:
         }
         response = await self._chat(COMPOSE_MULTI_AGENT_PROMPT, json.dumps(payload, ensure_ascii=True))
         return response.text
+
+    async def review_security(self, payload: dict[str, Any]) -> LLMResponse:
+        provider_options: dict[str, Any] | None = None
+        plugins: list[dict[str, str]] | None = None
+        if self.provider_name == "openrouter":
+            provider_options = {"require_parameters": True}
+            plugins = [{"id": "response-healing"}]
+        return await self._chat(
+            SECURITY_OFFICER_SYSTEM_PROMPT,
+            json.dumps(payload, ensure_ascii=True),
+            response_format=SECURITY_REVIEW_RESPONSE_FORMAT,
+            provider_options=provider_options,
+            plugins=plugins,
+        )
 
     async def _chat(
         self,

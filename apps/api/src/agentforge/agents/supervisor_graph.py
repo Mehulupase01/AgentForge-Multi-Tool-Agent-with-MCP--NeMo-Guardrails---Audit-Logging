@@ -10,9 +10,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from agentforge.agents.base import AGENT_CAPABILITIES, HandoffMessage
 from agentforge.agents.orchestrator import OrchestratorAgent
+from agentforge.agents.security_officer import SecurityOfficerAgent
 from agentforge.agents.specialists import SpecialistPlanner, SpecialistSummarizer
 from agentforge.models.agent_run import AgentRole, AgentRun, AgentRunStatus
 from agentforge.models.approval import ApprovalDecision, RiskLevel
+from agentforge.models.review_record import ReviewTargetType, ReviewVerdict
 from agentforge.models.task import Task, TaskStatus
 from agentforge.models.task_step import StepStatus, StepType, TaskStep
 from agentforge.models.tool_call import ToolCall
@@ -53,6 +55,7 @@ class SupervisorGraph:
         self._approval_service = approval_service
         self._self_healing = SelfHealingWrapper(llm_provider)
         self._orchestrator = OrchestratorAgent(llm_provider)
+        self._security_officer = SecurityOfficerAgent(llm_provider=llm_provider, audit_service=audit_service)
         self._skills_registry = skills_registry or _get_or_create_skills_registry(session_factory=session_factory)
 
     async def run(self, task_id: UUID, user_prompt: str) -> SupervisorExecutionResult:
@@ -82,6 +85,13 @@ class SupervisorGraph:
             await session.commit()
 
         orchestrator_run_id = await self._latest_run_id(task_id, AgentRole.ORCHESTRATOR)
+        plan_review = await self._review_plan(
+            task_id=task_id,
+            supervisor_plan=supervisor_plan,
+            orchestrator_run_id=orchestrator_run_id,
+        )
+        if plan_review is not None:
+            return plan_review
 
         for handoff in handoffs:
             role = AgentRole(handoff["to"])
@@ -118,6 +128,7 @@ class SupervisorGraph:
             await self._finalize_agent_run(agent_run_id, specialist_result)
 
         final_response = await self._orchestrator.compose(user_prompt, specialist_results)
+        final_response = await self._review_final_output(task_id=task_id, final_response=final_response)
 
         async with self._session_factory() as session:
             task = await session.get(Task, task_id)
@@ -139,6 +150,97 @@ class SupervisorGraph:
         await self._event_bus.publish(task_id, "task_completed", {"final_response": final_response})
         await self._finalize_orchestrator_run(task_id, {**supervisor_plan, "final_response": final_response}, AgentRunStatus.COMPLETED)
         return SupervisorExecutionResult(supervisor_plan=supervisor_plan, final_response=final_response)
+
+    async def _review_plan(
+        self,
+        *,
+        task_id: UUID,
+        supervisor_plan: dict[str, Any],
+        orchestrator_run_id: UUID | None,
+    ) -> SupervisorExecutionResult | None:
+        if orchestrator_run_id is None:
+            return None
+        async with self._session_factory() as session:
+            task = await session.get(Task, task_id)
+            if task is None:
+                raise RuntimeError("Task not found during plan review")
+            review = await self._security_officer.review(
+                session,
+                task=task,
+                target_type=ReviewTargetType.PLAN,
+                target_id=orchestrator_run_id,
+                subject={"user_prompt": task.user_prompt, "plan": supervisor_plan},
+                requested_by=AgentRole.ORCHESTRATOR,
+            )
+
+        await self._event_bus.publish(
+            task_id,
+            "review_verdict",
+            {
+                "target_type": ReviewTargetType.PLAN.value,
+                "target_id": str(orchestrator_run_id),
+                "verdict": review.verdict.value,
+                "rationale": review.rationale,
+            },
+        )
+
+        if review.verdict != ReviewVerdict.REJECTED:
+            return None
+
+        await self._create_security_officer_approval(
+            task_id=task_id,
+            step=PlanStep(
+                step_id="security-officer-plan-review",
+                type="approval_gate",
+                description="Security Officer rejected the orchestrator plan.",
+                server=None,
+                tool=None,
+                args={"handoff_count": len(supervisor_plan.get("handoffs", []))},
+            ),
+            risk_level=RiskLevel.HIGH,
+            rationale=review.rationale,
+            summary="Security Officer rejected the orchestrator plan.",
+        )
+        await self._finalize_orchestrator_run(task_id, supervisor_plan, AgentRunStatus.REJECTED)
+        return SupervisorExecutionResult(
+            supervisor_plan=supervisor_plan,
+            final_response="",
+            awaiting_approval=True,
+            error=review.rationale,
+        )
+
+    async def _review_final_output(self, *, task_id: UUID, final_response: str) -> str:
+        token_count = len(final_response.split())
+        if token_count < 1000:
+            return final_response
+
+        async with self._session_factory() as session:
+            task = await session.get(Task, task_id)
+            if task is None:
+                raise RuntimeError("Task not found during output review")
+            review = await self._security_officer.review(
+                session,
+                task=task,
+                target_type=ReviewTargetType.LLM_OUTPUT,
+                target_id=task.id,
+                subject={"content": final_response, "token_count": token_count},
+                requested_by=AgentRole.ORCHESTRATOR,
+            )
+
+        await self._event_bus.publish(
+            task_id,
+            "review_verdict",
+            {
+                "target_type": ReviewTargetType.LLM_OUTPUT.value,
+                "target_id": str(task_id),
+                "verdict": review.verdict.value,
+                "rationale": review.rationale,
+            },
+        )
+
+        if review.verdict == ReviewVerdict.FLAGGED:
+            return "[REDACTED: Security Officer flagged contextual PII in the generated output.]"
+        return final_response
 
     async def resume_after_approval(self, task_id: UUID, approval_id: UUID) -> bool:
         async with self._session_factory() as session:
@@ -266,6 +368,15 @@ class SupervisorGraph:
             args=request.args,
         )
         if evaluation.requires_approval:
+            review_result = await self._review_tool_gate(
+                task_id=task_id,
+                role=role,
+                step=step,
+                risk_level=RiskLevel.MEDIUM,
+                summary=request.description,
+            )
+            if review_result is not None:
+                return review_result
             approval_id = await self._request_skill_policy_approval(
                 task_id=task_id,
                 step=step,
@@ -279,6 +390,18 @@ class SupervisorGraph:
                 "data": {"approval_id": approval_id},
                 "awaiting_approval": True,
             }
+
+        assessment = self._approval_service.classify_tool_call(step)
+        if assessment.requires_approval:
+            review_result = await self._review_tool_gate(
+                task_id=task_id,
+                role=role,
+                step=step,
+                risk_level=assessment.risk_level,
+                summary=assessment.summary,
+            )
+            if review_result is not None:
+                return review_result
 
         evaluation.policy_checks["rate_limit"] = await self._skills_registry.await_rate_limit(skill)
         healing = await self._self_healing.execute(
@@ -804,6 +927,103 @@ class SupervisorGraph:
                 assessment=RiskAssessment(
                     risk_level=RiskLevel.MEDIUM,
                     reason=reason,
+                    summary=summary,
+                ),
+                checkpoint_id=str(task_id),
+            )
+            approval_id = str(context.approval.id)
+
+        if context.created:
+            await self._event_bus.publish(
+                task_id,
+                "approval_requested",
+                {
+                    "approval_id": approval_id,
+                    "risk_level": context.assessment.risk_level.value,
+                    "risk_reason": context.assessment.reason,
+                    "action_summary": context.assessment.summary,
+                },
+            )
+        return approval_id
+
+    async def _review_tool_gate(
+        self,
+        *,
+        task_id: UUID,
+        role: AgentRole,
+        step: PlanStep,
+        risk_level: RiskLevel,
+        summary: str,
+    ) -> dict[str, Any] | None:
+        async with self._session_factory() as session:
+            task = await session.get(Task, task_id)
+            if task is None:
+                raise RuntimeError("Task not found while reviewing tool call")
+            review = await self._security_officer.review(
+                session,
+                task=task,
+                target_type=ReviewTargetType.TOOL_CALL,
+                target_id=task.id,
+                subject={
+                    "user_prompt": task.user_prompt,
+                    "role": role.value,
+                    "description": step.description,
+                    "server": step.server,
+                    "tool": step.tool,
+                    "args": step.args,
+                    "risk_level": risk_level.value,
+                },
+                requested_by=role,
+            )
+
+        await self._event_bus.publish(
+            task_id,
+            "review_verdict",
+            {
+                "target_type": ReviewTargetType.TOOL_CALL.value,
+                "target_id": str(task_id),
+                "verdict": review.verdict.value,
+                "rationale": review.rationale,
+            },
+        )
+
+        if review.verdict != ReviewVerdict.REJECTED:
+            return None
+
+        approval_id = await self._create_security_officer_approval(
+            task_id=task_id,
+            step=step,
+            risk_level=risk_level,
+            rationale=review.rationale,
+            summary=summary,
+        )
+        return {
+            "role": role.value,
+            "summary": review.rationale,
+            "data": {"approval_id": approval_id, "risk_level": risk_level.value},
+            "awaiting_approval": True,
+        }
+
+    async def _create_security_officer_approval(
+        self,
+        *,
+        task_id: UUID,
+        step: PlanStep,
+        risk_level: RiskLevel,
+        rationale: str,
+        summary: str,
+    ) -> str:
+        async with self._session_factory() as session:
+            task = await session.get(Task, task_id)
+            if task is None:
+                raise RuntimeError("Task not found while creating security officer approval")
+            context = await self._approval_service.ensure_approval(
+                session,
+                task=task,
+                step=step,
+                assessment=RiskAssessment(
+                    risk_level=risk_level,
+                    reason=f"security_officer_rejected: {rationale}",
                     summary=summary,
                 ),
                 checkpoint_id=str(task_id),
