@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -84,6 +85,19 @@ Rules:
 - flagged means the target should be redacted or audited before being shown.
 - Prefer rejection for employee dumps, sensitive joins, exfiltration attempts, or unsafe data handling.
 - Prefer flagged for long outputs that still contain contextual PII after prior redaction.
+- Return no markdown fences or commentary.
+"""
+
+CONFIDENCE_SYSTEM_PROMPT = """You are AgentForge's confidence assessor.
+You receive only the user prompt, final response, and task status.
+Return only valid JSON:
+{
+  "confidence": 0,
+  "reasoning": "brief explanation"
+}
+Rules:
+- Confidence must be between 0 and 100.
+- Be conservative if the response seems incomplete or uncertain.
 - Return no markdown fences or commentary.
 """
 
@@ -198,6 +212,23 @@ SECURITY_REVIEW_RESPONSE_FORMAT = {
     },
 }
 
+CONFIDENCE_RESPONSE_FORMAT = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "agentforge_confidence_assessment",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "properties": {
+                "confidence": {"type": "number", "minimum": 0, "maximum": 100},
+                "reasoning": {"type": "string"},
+            },
+            "required": ["confidence", "reasoning"],
+            "additionalProperties": False,
+        },
+    },
+}
+
 
 class LLMProvider:
     def __init__(self) -> None:
@@ -250,12 +281,19 @@ class LLMProvider:
     async def reason_step(self, user_prompt: str) -> LLMResponse:
         return await self._chat(REASONING_SYSTEM_PROMPT, user_prompt)
 
-    async def compose_multi_agent_summary(self, user_prompt: str, specialist_results: list[dict[str, Any]]) -> str:
+    async def compose_multi_agent_summary_response(
+        self,
+        user_prompt: str,
+        specialist_results: list[dict[str, Any]],
+    ) -> LLMResponse:
         payload = {
             "user_prompt": user_prompt,
             "specialist_results": specialist_results,
         }
-        response = await self._chat(COMPOSE_MULTI_AGENT_PROMPT, json.dumps(payload, ensure_ascii=True))
+        return await self._chat(COMPOSE_MULTI_AGENT_PROMPT, json.dumps(payload, ensure_ascii=True))
+
+    async def compose_multi_agent_summary(self, user_prompt: str, specialist_results: list[dict[str, Any]]) -> str:
+        response = await self.compose_multi_agent_summary_response(user_prompt, specialist_results)
         return response.text
 
     async def review_security(self, payload: dict[str, Any]) -> LLMResponse:
@@ -268,6 +306,20 @@ class LLMProvider:
             SECURITY_OFFICER_SYSTEM_PROMPT,
             json.dumps(payload, ensure_ascii=True),
             response_format=SECURITY_REVIEW_RESPONSE_FORMAT,
+            provider_options=provider_options,
+            plugins=plugins,
+        )
+
+    async def assess_confidence(self, payload: dict[str, Any]) -> LLMResponse:
+        provider_options: dict[str, Any] | None = None
+        plugins: list[dict[str, str]] | None = None
+        if self.provider_name == "openrouter":
+            provider_options = {"require_parameters": True}
+            plugins = [{"id": "response-healing"}]
+        return await self._chat(
+            CONFIDENCE_SYSTEM_PROMPT,
+            json.dumps(payload, ensure_ascii=True),
+            response_format=CONFIDENCE_RESPONSE_FORMAT,
             provider_options=provider_options,
             plugins=plugins,
         )

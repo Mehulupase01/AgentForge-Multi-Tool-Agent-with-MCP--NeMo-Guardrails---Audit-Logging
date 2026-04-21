@@ -13,7 +13,8 @@ from agentforge.agents.orchestrator import OrchestratorAgent
 from agentforge.agents.security_officer import SecurityOfficerAgent
 from agentforge.agents.specialists import SpecialistPlanner, SpecialistSummarizer
 from agentforge.models.agent_run import AgentRole, AgentRun, AgentRunStatus
-from agentforge.models.approval import ApprovalDecision, RiskLevel
+from agentforge.models.approval import Approval, ApprovalDecision, RiskLevel
+from agentforge.models.llm_call import LLMCall
 from agentforge.models.review_record import ReviewTargetType, ReviewVerdict
 from agentforge.models.task import Task, TaskStatus
 from agentforge.models.task_step import StepStatus, StepType, TaskStep
@@ -21,6 +22,8 @@ from agentforge.models.tool_call import ToolCall
 from agentforge.schemas.task import PlanStep
 from agentforge.services.approval_service import ApprovalService, RiskAssessment
 from agentforge.services.audit_service import AuditService
+from agentforge.services.confidence_scorer import ConfidenceScorer
+from agentforge.services.cost_tracker import CostTracker
 from agentforge.services.mcp_client_pool import MCPClientPool
 from agentforge.services.self_healing import SelfHealingOutcome, SelfHealingWrapper
 from agentforge.services.skills_registry import SkillContext, SkillsRegistry, _get_or_create_skills_registry
@@ -53,13 +56,20 @@ class SupervisorGraph:
         self._event_bus = event_bus
         self._audit_service = audit_service
         self._approval_service = approval_service
+        self._llm_provider = llm_provider
         self._self_healing = SelfHealingWrapper(llm_provider)
         self._orchestrator = OrchestratorAgent(llm_provider)
         self._security_officer = SecurityOfficerAgent(llm_provider=llm_provider, audit_service=audit_service)
+        self._cost_tracker = CostTracker(audit_service=audit_service)
+        self._confidence_scorer = ConfidenceScorer(
+            approval_service=approval_service,
+            llm_provider=llm_provider,
+            audit_service=audit_service,
+        )
         self._skills_registry = skills_registry or _get_or_create_skills_registry(session_factory=session_factory)
 
     async def run(self, task_id: UUID, user_prompt: str) -> SupervisorExecutionResult:
-        handoffs = await self._orchestrator.route(user_prompt)
+        handoffs, supervisor_response = await self._orchestrator.route_with_response(user_prompt)
         if not handoffs:
             return SupervisorExecutionResult(supervisor_plan={"handoffs": [], "steps_expected": 0}, final_response="")
 
@@ -82,6 +92,14 @@ class SupervisorGraph:
                     result_json=supervisor_plan,
                 )
             )
+            if supervisor_response is not None:
+                await self._record_llm_call(
+                    session,
+                    task=task,
+                    role=AgentRole.ORCHESTRATOR,
+                    prompt=user_prompt,
+                    response=supervisor_response,
+                )
             await session.commit()
 
         orchestrator_run_id = await self._latest_run_id(task_id, AgentRole.ORCHESTRATOR)
@@ -127,7 +145,7 @@ class SupervisorGraph:
                 )
             await self._finalize_agent_run(agent_run_id, specialist_result)
 
-        final_response = await self._orchestrator.compose(user_prompt, specialist_results)
+        final_response, compose_response = await self._orchestrator.compose_with_response(user_prompt, specialist_results)
         final_response = await self._review_final_output(task_id=task_id, final_response=final_response)
 
         async with self._session_factory() as session:
@@ -137,16 +155,53 @@ class SupervisorGraph:
             task.status = TaskStatus.COMPLETED
             task.final_response = final_response
             task.completed_at = datetime.now(UTC)
+            if compose_response is not None:
+                await self._record_llm_call(
+                    session,
+                    task=task,
+                    role=AgentRole.ORCHESTRATOR,
+                    prompt=json.dumps(
+                        {"user_prompt": user_prompt, "specialist_results": specialist_results},
+                        ensure_ascii=True,
+                    ),
+                    response=compose_response,
+                )
+            confidence = await self._confidence_scorer.score_task(session, task_id=task.id)
             await session.commit()
-            await self._audit_service.record_event(
-                session,
-                event_type="task.completed",
-                actor="system",
-                payload={"task_id": str(task_id), "final_response": final_response},
-                session_id=task.session_id,
-                task_id=task.id,
-            )
+            if task.status == TaskStatus.COMPLETED:
+                await self._audit_service.record_event(
+                    session,
+                    event_type="task.completed",
+                    actor="system",
+                    payload={"task_id": str(task_id), "final_response": final_response},
+                    session_id=task.session_id,
+                    task_id=task.id,
+                )
 
+        await self._event_bus.publish(
+            task_id,
+            "confidence_update",
+            {
+                "value": confidence.value,
+                "heuristic_value": confidence.heuristic_value,
+                "self_reported_value": confidence.self_reported_value,
+                "factors": confidence.factors_json,
+            },
+        )
+        if task.status == TaskStatus.AWAITING_APPROVAL:
+            approval_id = await self._latest_confidence_gate_approval(task_id)
+            if approval_id is not None:
+                await self._event_bus.publish(
+                    task_id,
+                    "approval_requested",
+                    {
+                        "approval_id": str(approval_id),
+                        "risk_level": RiskLevel.LOW.value,
+                        "risk_reason": "confidence_gate",
+                        "action_summary": "Operator review required for a low-confidence task result.",
+                    },
+                )
+            return SupervisorExecutionResult(supervisor_plan=supervisor_plan, final_response=final_response, awaiting_approval=True)
         await self._event_bus.publish(task_id, "task_completed", {"final_response": final_response})
         await self._finalize_orchestrator_run(task_id, {**supervisor_plan, "final_response": final_response}, AgentRunStatus.COMPLETED)
         return SupervisorExecutionResult(supervisor_plan=supervisor_plan, final_response=final_response)
@@ -669,6 +724,51 @@ class SupervisorGraph:
             agent_run.completed_at = datetime.now(UTC)
             agent_run.result_json = result
             await session.commit()
+
+    async def _record_llm_call(self, session: AsyncSession, *, task: Task, role: AgentRole, prompt: str, response) -> None:
+        llm_call = LLMCall(
+            provider=getattr(self._llm_provider, "provider_name", "unknown"),
+            model=getattr(self._llm_provider, "model_name", "unknown"),
+            prompt=prompt,
+            completion=response.text,
+            prompt_tokens=response.prompt_tokens,
+            completion_tokens=response.completion_tokens,
+            latency_ms=response.latency_ms,
+        )
+        session.add(llm_call)
+        await session.flush()
+        cost_record = await self._cost_tracker.record(
+            session,
+            llm_call_id=llm_call.id,
+            task_id=task.id,
+            agent_role=role,
+        )
+        await self._event_bus.publish(
+            task.id,
+            "cost_update",
+            {
+                "llm_call_id": str(llm_call.id),
+                "agent_role": role.value,
+                "prompt_tokens": cost_record.prompt_tokens,
+                "completion_tokens": cost_record.completion_tokens,
+                "usd_cost": round(cost_record.usd_cost, 8),
+                "model": cost_record.model,
+            },
+        )
+
+    async def _latest_confidence_gate_approval(self, task_id: UUID) -> UUID | None:
+        async with self._session_factory() as session:
+            task = await session.get(Task, task_id)
+            if task is None:
+                return None
+            approval = (
+                await session.execute(
+                    select(Approval)
+                    .where(Approval.task_id == task_id, Approval.risk_reason == "confidence_gate")
+                    .order_by(Approval.requested_at.desc())
+                )
+            ).scalars().first()
+            return approval.id if approval is not None else None
 
     async def _record_history_entries(
         self,

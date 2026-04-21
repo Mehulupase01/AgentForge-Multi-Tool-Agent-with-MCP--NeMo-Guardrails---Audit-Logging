@@ -4,6 +4,12 @@ from agentforge.schemas.audit import AuditEventResponse, IntegrityResponse
 from agentforge.schemas.common import Envelope, ErrorBody, ErrorResponse, Pagination
 from agentforge.schemas.corpus import CorpusDocumentResponse, ReindexResponse
 from agentforge.schemas.mcp import MCPServerInfo, MCPToolDescriptor
+from agentforge.schemas.observability import (
+    AgentHandoffsResponse,
+    ObservabilitySummaryResponse,
+    TaskConfidenceResponse,
+    TaskCostResponse,
+)
 from agentforge.schemas.redteam import RedteamResultResponse, RedteamRunRequest, RedteamRunResponse
 from agentforge.schemas.session import SessionCreate, SessionResponse
 from agentforge.schemas.skill import SkillInvocationResponse, SkillReloadResponse, SkillResponse
@@ -18,9 +24,11 @@ __all__ = [
     "Envelope",
     "ErrorBody",
     "ErrorResponse",
+    "AgentHandoffsResponse",
     "IntegrityResponse",
     "MCPServerInfo",
     "MCPToolDescriptor",
+    "ObservabilitySummaryResponse",
     "PlanStep",
     "Pagination",
     "RedteamResultResponse",
@@ -34,7 +42,9 @@ __all__ = [
     "SkillInvocationResponse",
     "SkillReloadResponse",
     "SkillResponse",
+    "TaskConfidenceResponse",
     "TaskCreate",
+    "TaskCostResponse",
     "TaskResponse",
     "TaskStepResponse",
     "TriggerCreate",

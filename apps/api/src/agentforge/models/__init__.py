@@ -1,7 +1,9 @@
 from agentforge.models.agent_run import AgentRole, AgentRun, AgentRunStatus
 from agentforge.models.approval import Approval, ApprovalDecision, RiskLevel
 from agentforge.models.audit_event import AuditEvent
+from agentforge.models.confidence_score import ConfidenceScope, ConfidenceScore
 from agentforge.models.corpus import CorpusDocument
+from agentforge.models.cost_record import CostRecord
 from agentforge.models.llm_call import LLMCall
 from agentforge.models.redteam import RedteamCategory, RedteamOutcome, RedteamResult, RedteamRun
 from agentforge.models.review_record import ReviewRecord, ReviewTargetType, ReviewVerdict
@@ -19,7 +21,10 @@ __all__ = [
     "AgentRun",
     "AgentRunStatus",
     "AuditEvent",
+    "ConfidenceScope",
+    "ConfidenceScore",
     "CorpusDocument",
+    "CostRecord",
     "LLMCall",
     "RedteamCategory",
     "RedteamOutcome",

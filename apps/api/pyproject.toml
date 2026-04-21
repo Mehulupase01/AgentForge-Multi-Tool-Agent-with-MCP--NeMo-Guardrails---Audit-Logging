@@ -41,6 +41,8 @@ dependencies = [
   "markdown-it-py==3.0.0",
   "sqlparse==0.5.3",
   "prometheus-client==0.21.1",
+  "tiktoken==0.8.0",
+  "pyyaml==6.0.2",
 ]
 
 [project.scripts]

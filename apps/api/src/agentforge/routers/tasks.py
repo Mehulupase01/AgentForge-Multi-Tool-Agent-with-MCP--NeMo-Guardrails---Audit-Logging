@@ -18,9 +18,11 @@ from agentforge.models.review_record import ReviewRecord
 from agentforge.models.session import Session
 from agentforge.models.task import Task, TaskStatus
 from agentforge.models.task_step import StepStatus, StepType, TaskStep
+from agentforge.models.confidence_score import ConfidenceScope
 from agentforge.schemas.common import Envelope, Pagination
 from agentforge.schemas.agent import AgentRunResponse, AgentRunSummary, ReviewRecordResponse
 from agentforge.schemas.task import ReplayRequest, ReplayResponse, TaskCreate, TaskResponse, TaskStepResponse
+from agentforge.schemas.observability import TaskConfidenceResponse, TaskCostResponse, CostByAgent, StepConfidenceResponse
 from agentforge.services.agent_orchestrator import AgentOrchestrator, get_agent_orchestrator
 from agentforge.services.approval_service import ApprovalService, get_approval_service
 from agentforge.services.audit_service import AuditService
@@ -35,6 +37,9 @@ audit_service = AuditService()
 
 def to_task_response(task: Task) -> TaskResponse:
     agent_runs = list(task.__dict__.get("agent_runs") or [])
+    review_records = list(task.__dict__.get("review_records") or [])
+    cost_records = list(task.__dict__.get("cost_records") or [])
+    confidence_scores = list(task.__dict__.get("confidence_scores") or [])
     serialized_plan = task.plan if isinstance(task.plan, list) else None
     supervisor_plan = task.plan if isinstance(task.plan, dict) and "handoffs" in task.plan else None
     for agent_run in reversed(agent_runs):
@@ -64,6 +69,71 @@ def to_task_response(task: Task) -> TaskResponse:
                 handoff_reason=agent_run.handoff_reason,
             )
             for agent_run in agent_runs
+        ],
+        reviews=[
+            ReviewRecordResponse(
+                id=record.id,
+                task_id=record.task_id,
+                target_type=record.target_type,
+                target_id=record.target_id,
+                reviewer_role=record.reviewer_role,
+                verdict=record.verdict,
+                rationale=record.rationale,
+                evidence_json=record.evidence_json,
+                reviewed_at=record.reviewed_at,
+            )
+            for record in review_records
+        ],
+        cost=_task_cost_summary(task.id, cost_records),
+        confidence=_task_confidence_summary(task.id, confidence_scores),
+    )
+
+
+def _task_cost_summary(task_id: UUID, cost_records: list) -> TaskCostResponse | None:
+    if not cost_records:
+        return None
+    by_agent: dict[str, dict] = {}
+    for record in cost_records:
+        role = record.agent_role.value if hasattr(record.agent_role, "value") else str(record.agent_role)
+        bucket = by_agent.setdefault(role, {"role": role, "prompt_tokens": 0, "completion_tokens": 0, "usd": 0.0})
+        bucket["prompt_tokens"] += record.prompt_tokens
+        bucket["completion_tokens"] += record.completion_tokens
+        bucket["usd"] += record.usd_cost
+    return TaskCostResponse(
+        task_id=task_id,
+        by_agent=[CostByAgent(**payload) for payload in sorted(by_agent.values(), key=lambda item: item["role"])],
+        total_usd=round(sum(record.usd_cost for record in cost_records), 8),
+    )
+
+
+def _task_confidence_summary(task_id: UUID, confidence_scores: list) -> TaskConfidenceResponse | None:
+    if not confidence_scores:
+        return None
+    task_row = next(
+        (
+            row
+            for row in confidence_scores
+            if row.scope == ConfidenceScope.TASK and row.target_id == task_id
+        ),
+        None,
+    )
+    if task_row is None:
+        return None
+    return TaskConfidenceResponse(
+        task_id=task_id,
+        task_confidence=task_row.value,
+        heuristic_value=task_row.heuristic_value,
+        self_reported_value=task_row.self_reported_value,
+        steps=[
+            StepConfidenceResponse(
+                step_id=row.target_id,
+                value=row.value,
+                heuristic_value=row.heuristic_value,
+                self_reported_value=row.self_reported_value,
+                factors=row.factors_json,
+            )
+            for row in confidence_scores
+            if row.scope == ConfidenceScope.STEP
         ],
     )
 
@@ -134,7 +204,12 @@ async def require_task(db: AsyncSession, task_id: UUID) -> Task:
     task = (
         await db.execute(
             select(Task)
-            .options(selectinload(Task.agent_runs))
+            .options(
+                selectinload(Task.agent_runs),
+                selectinload(Task.review_records),
+                selectinload(Task.cost_records),
+                selectinload(Task.confidence_scores),
+            )
             .where(Task.id == task_id),
         )
     ).scalars().first()

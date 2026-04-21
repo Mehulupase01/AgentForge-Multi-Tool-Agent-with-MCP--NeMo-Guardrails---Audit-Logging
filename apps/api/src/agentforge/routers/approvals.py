@@ -98,5 +98,6 @@ async def decide_approval(
         rationale=body.rationale,
         decided_by=request.state.user_id,
     )
-    await approval_service.signal_resume(approval.task_id, approval.id)
+    if approval.risk_reason != "confidence_gate":
+        await approval_service.signal_resume(approval.task_id, approval.id)
     return ApprovalResponse.model_validate(approval)

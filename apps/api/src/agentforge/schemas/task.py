@@ -6,7 +6,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, model_validator
 
-from agentforge.schemas.agent import AgentRunSummary
+from agentforge.schemas.agent import AgentRunSummary, ReviewRecordSummary
+from agentforge.schemas.observability import TaskConfidenceResponse, TaskCostResponse
 from agentforge.models.agent_run import AgentRole
 from agentforge.models.task import TaskStatus
 from agentforge.models.task_step import StepStatus, StepType
@@ -54,6 +55,9 @@ class TaskResponse(BaseModel):
     error: str | None = None
     checkpoint_id: str | None = None
     agent_runs: list[AgentRunSummary] = Field(default_factory=list)
+    reviews: list[ReviewRecordSummary] = Field(default_factory=list)
+    cost: TaskCostResponse | None = None
+    confidence: TaskConfidenceResponse | None = None
 
 
 class ReplayResponse(BaseModel):

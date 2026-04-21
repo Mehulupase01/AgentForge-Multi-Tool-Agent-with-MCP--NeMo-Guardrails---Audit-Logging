@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -32,6 +34,8 @@ class Settings(BaseSettings):
     orchestrator_checkpoint_path: str = "runtime/orchestrator_checkpoints.sqlite"
     replay_max_checkpoint_age_hours: int = 72
     trigger_worker_url: str | None = None
+    confidence_gate_threshold: float = 80.0
+    openai_prices_path: str = "fixtures/pricing/openai_prices.yml"
 
     agentforge_api_url: str = "http://api:8000"
     agentforge_api_key: str = "dev-key"
@@ -47,6 +51,18 @@ class Settings(BaseSettings):
             if normalized in {"debug", "development", "dev"}:
                 return True
         return value
+
+    @field_validator("confidence_gate_threshold")
+    @classmethod
+    def validate_confidence_gate_threshold(cls, value: float) -> float:
+        if not 0.0 <= value <= 100.0:
+            raise ValueError("CONFIDENCE_GATE_THRESHOLD must be between 0 and 100.")
+        return value
+
+    @property
+    def openai_prices_path_resolved(self) -> Path:
+        path = Path(self.openai_prices_path)
+        return path if path.is_absolute() else Path(__file__).resolve().parents[4] / path
 
     model_config = SettingsConfigDict(
         env_file=".env",

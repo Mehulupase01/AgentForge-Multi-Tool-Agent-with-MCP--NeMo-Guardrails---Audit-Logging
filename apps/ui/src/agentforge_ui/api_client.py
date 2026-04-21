@@ -150,6 +150,18 @@ class AgentForgeClient:
     def start_redteam_run(self, *, scenario_ids: list[str] | None = None) -> dict[str, Any]:
         return self._request_json("POST", "/api/v1/redteam/run", json={"scenario_ids": scenario_ids})
 
+    def get_task_cost(self, task_id: str) -> dict[str, Any]:
+        return self._request_json("GET", f"/api/v1/observability/tasks/{task_id}/cost")
+
+    def get_task_confidence(self, task_id: str) -> dict[str, Any]:
+        return self._request_json("GET", f"/api/v1/observability/tasks/{task_id}/confidence")
+
+    def get_observability_summary(self) -> dict[str, Any]:
+        return self._request_json("GET", "/api/v1/observability/summary")
+
+    def get_agent_handoffs(self) -> dict[str, Any]:
+        return self._request_json("GET", "/api/v1/observability/agent_handoffs")
+
     def _request_json(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
         response = self._client.request(method, path, **kwargs)
         try:

@@ -11,9 +11,11 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agentforge.models.agent_run import AgentRole
+from agentforge.models.llm_call import LLMCall
 from agentforge.models.review_record import ReviewRecord, ReviewTargetType, ReviewVerdict
 from agentforge.models.task import Task
 from agentforge.services.audit_service import AuditService
+from agentforge.services.cost_tracker import CostTracker
 
 
 EMAIL_PATTERN = re.compile(r"\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b")
@@ -41,6 +43,7 @@ class SecurityOfficerAgent:
         self._llm_provider = llm_provider
         self._audit_service = audit_service or AuditService()
         self._timeout_seconds = timeout_seconds
+        self._cost_tracker = CostTracker(audit_service=self._audit_service)
 
     async def review(
         self,
@@ -68,7 +71,7 @@ class SecurityOfficerAgent:
 
         try:
             result = await asyncio.wait_for(
-                self._decide(subject=subject, target_type=target_type),
+                self._decide(session=session, task=task, subject=subject, target_type=target_type),
                 timeout=self._timeout_seconds,
             )
         except TimeoutError:
@@ -119,6 +122,8 @@ class SecurityOfficerAgent:
     async def _decide(
         self,
         *,
+        session: AsyncSession,
+        task: Task,
         subject: dict[str, Any],
         target_type: ReviewTargetType,
     ) -> SecurityReviewResult:
@@ -126,13 +131,29 @@ class SecurityOfficerAgent:
         if not hasattr(self._llm_provider, "review_security"):
             return heuristic
 
-        response = await self._llm_provider.review_security(
-            {
-                "target_type": target_type.value,
-                "subject": subject,
-                "heuristic_verdict": heuristic.verdict.value,
-                "heuristic_rationale": heuristic.rationale,
-            }
+        request_payload = {
+            "target_type": target_type.value,
+            "subject": subject,
+            "heuristic_verdict": heuristic.verdict.value,
+            "heuristic_rationale": heuristic.rationale,
+        }
+        response = await self._llm_provider.review_security(request_payload)
+        llm_call = LLMCall(
+            provider=getattr(self._llm_provider, "provider_name", "unknown"),
+            model=getattr(self._llm_provider, "model_name", "unknown"),
+            prompt=json.dumps(request_payload, ensure_ascii=True),
+            completion=response.text,
+            prompt_tokens=response.prompt_tokens,
+            completion_tokens=response.completion_tokens,
+            latency_ms=response.latency_ms,
+        )
+        session.add(llm_call)
+        await session.flush()
+        await self._cost_tracker.record(
+            session,
+            llm_call_id=llm_call.id,
+            task_id=task.id,
+            agent_role=AgentRole.SECURITY_OFFICER,
         )
         payload = json.loads(response.text)
         verdict = ReviewVerdict(payload["verdict"])

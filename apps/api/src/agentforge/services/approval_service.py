@@ -201,11 +201,13 @@ class ApprovalService:
         decision: ApprovalDecision,
         rationale: str | None,
         decided_by: str,
-    ) -> Approval:
+        ) -> Approval:
         approval.decision = decision
         approval.rationale = rationale
         approval.decided_by = decided_by
         approval.decided_at = datetime.now(UTC)
+        if approval.risk_reason == "confidence_gate":
+            await self._apply_confidence_gate_decision(session, approval)
         await self._audit_service.record_event(
             session,
             event_type="approval.decided",
@@ -221,6 +223,28 @@ class ApprovalService:
         )
         await session.commit()
         return approval
+
+    async def _apply_confidence_gate_decision(self, session: AsyncSession, approval: Approval) -> None:
+        task = await session.get(Task, approval.task_id)
+        if task is None:
+            return
+        if approval.decision == ApprovalDecision.APPROVED:
+            task.status = TaskStatus.COMPLETED
+            task.completed_at = task.completed_at or datetime.now(UTC)
+            if approval.task_step_id is not None:
+                gate_step = await session.get(TaskStep, approval.task_step_id)
+                if gate_step is not None:
+                    gate_step.status = StepStatus.COMPLETED
+                    gate_step.completed_at = datetime.now(UTC)
+                    gate_step.output_json = {
+                        "approval_id": str(approval.id),
+                        "decision": approval.decision.value,
+                        "rationale": approval.rationale,
+                    }
+            return
+
+        rejection_reason, _ = await self.apply_rejection(session, approval)
+        task.error = rejection_reason
 
     async def mark_gate_approved(self, session: AsyncSession, approval: Approval) -> None:
         task = await session.get(Task, approval.task_id)

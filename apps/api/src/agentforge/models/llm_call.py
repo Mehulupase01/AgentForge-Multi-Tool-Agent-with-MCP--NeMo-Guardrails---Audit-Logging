@@ -9,6 +9,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from agentforge.models.base import Base, TimestampMixin, new_uuid
 
 if TYPE_CHECKING:
+    from agentforge.models.cost_record import CostRecord
     from agentforge.models.task_step import TaskStep
 
 
@@ -34,6 +35,11 @@ class LLMCall(Base, TimestampMixin):
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     task_step: Mapped["TaskStep | None"] = relationship(back_populates="llm_calls")
+    cost_record: Mapped["CostRecord | None"] = relationship(
+        back_populates="llm_call",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )
 
     __table_args__ = (
         Index("ix_llm_calls_task_step_id", "task_step_id"),

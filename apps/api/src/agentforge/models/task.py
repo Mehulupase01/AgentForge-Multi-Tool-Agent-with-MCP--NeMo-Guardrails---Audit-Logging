@@ -13,6 +13,8 @@ from agentforge.models.base import Base, TimestampMixin, new_uuid
 if TYPE_CHECKING:
     from agentforge.models.agent_run import AgentRun
     from agentforge.models.approval import Approval
+    from agentforge.models.confidence_score import ConfidenceScore
+    from agentforge.models.cost_record import CostRecord
     from agentforge.models.review_record import ReviewRecord
     from agentforge.models.session import Session
     from agentforge.models.task_step import TaskStep
@@ -65,6 +67,16 @@ class Task(Base, TimestampMixin):
         back_populates="task",
         cascade="all, delete-orphan",
         order_by="Approval.requested_at",
+    )
+    cost_records: Mapped[list["CostRecord"]] = relationship(
+        back_populates="task",
+        cascade="all, delete-orphan",
+        order_by="CostRecord.recorded_at",
+    )
+    confidence_scores: Mapped[list["ConfidenceScore"]] = relationship(
+        back_populates="task",
+        cascade="all, delete-orphan",
+        order_by="ConfidenceScore.scored_at",
     )
     review_records: Mapped[list["ReviewRecord"]] = relationship(
         back_populates="task",

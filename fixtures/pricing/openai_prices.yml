@@ -1,0 +1,13 @@
+models:
+  "gpt-4o-mini":
+    input_per_1k_usd: 0.00015
+    output_per_1k_usd: 0.0006
+  "gpt-4o":
+    input_per_1k_usd: 0.0025
+    output_per_1k_usd: 0.01
+  "openrouter/free":
+    input_per_1k_usd: 0.0
+    output_per_1k_usd: 0.0
+default:
+  input_per_1k_usd: 0.0005
+  output_per_1k_usd: 0.0015

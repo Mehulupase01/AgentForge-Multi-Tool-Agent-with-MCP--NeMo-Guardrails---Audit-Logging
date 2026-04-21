@@ -26,6 +26,8 @@ from agentforge.models.tool_call import ToolCall
 from agentforge.schemas.task import PlanStep
 from agentforge.services.approval_service import ApprovalService, RiskAssessment, get_approval_service
 from agentforge.services.audit_service import AuditService
+from agentforge.services.confidence_scorer import ConfidenceScorer
+from agentforge.services.cost_tracker import CostTracker
 from agentforge.services.llm_provider import LLMProvider
 from agentforge.services.mcp_client_pool import MCPClientPool
 from agentforge.services.replay_service import ReplayService
@@ -77,6 +79,12 @@ class AgentOrchestrator:
         self._checkpointer_cm: Any | None = None
         self._graph_lock = asyncio.Lock()
         self._self_healing = SelfHealingWrapper(llm_provider)
+        self._cost_tracker = CostTracker(audit_service=self._audit_service)
+        self._confidence_scorer = ConfidenceScorer(
+            approval_service=approval_service,
+            llm_provider=llm_provider,
+            audit_service=self._audit_service,
+        )
         self._replay_service = ReplayService(
             session_factory=session_factory,
             approval_service=approval_service,
@@ -365,17 +373,23 @@ class AgentOrchestrator:
             task.plan = [step.model_dump() for step in parsed]
             task.status = TaskStatus.EXECUTING
             task.started_at = datetime.now(UTC)
-            session.add(
-                LLMCall(
-                    provider=self._llm_provider.provider_name,
-                    model=self._llm_provider.model_name,
-                    prompt=state["user_prompt"],
-                    completion=response.text,
-                    input_rails_json=state.get("input_rails"),
-                    prompt_tokens=response.prompt_tokens,
-                    completion_tokens=response.completion_tokens,
-                    latency_ms=response.latency_ms,
-                ),
+            llm_call = LLMCall(
+                provider=self._llm_provider.provider_name,
+                model=self._llm_provider.model_name,
+                prompt=state["user_prompt"],
+                completion=response.text,
+                input_rails_json=state.get("input_rails"),
+                prompt_tokens=response.prompt_tokens,
+                completion_tokens=response.completion_tokens,
+                latency_ms=response.latency_ms,
+            )
+            session.add(llm_call)
+            await session.flush()
+            cost_record = await self._cost_tracker.record(
+                session,
+                llm_call_id=llm_call.id,
+                task_id=task.id,
+                agent_role=AgentRole.ORCHESTRATOR,
             )
             await session.commit()
 
@@ -393,6 +407,7 @@ class AgentOrchestrator:
             "plan",
             {"steps": [step.model_dump() for step in parsed]},
         )
+        await self._publish_cost_update(state["task_id"], cost_record)
         return {**state, "plan": [step.model_dump() for step in parsed], "cursor": 0}
 
     async def _next_step(self, state: AgentState) -> AgentState:
@@ -693,18 +708,24 @@ class AgentOrchestrator:
                 )
             elif result.get("kind") == "llm_reasoning":
                 llm_response = result["llm"]
-                session.add(
-                    LLMCall(
-                        task_step_id=task_step.id,
-                        provider=self._llm_provider.provider_name,
-                        model=self._llm_provider.model_name,
-                        prompt=result["input"]["prompt"],
-                        completion=llm_response["text"],
-                        output_rails_json=llm_response.get("output_rails_json"),
-                        prompt_tokens=llm_response["prompt_tokens"],
-                        completion_tokens=llm_response["completion_tokens"],
-                        latency_ms=llm_response["latency_ms"],
-                    ),
+                llm_call = LLMCall(
+                    task_step_id=task_step.id,
+                    provider=self._llm_provider.provider_name,
+                    model=self._llm_provider.model_name,
+                    prompt=result["input"]["prompt"],
+                    completion=llm_response["text"],
+                    output_rails_json=llm_response.get("output_rails_json"),
+                    prompt_tokens=llm_response["prompt_tokens"],
+                    completion_tokens=llm_response["completion_tokens"],
+                    latency_ms=llm_response["latency_ms"],
+                )
+                session.add(llm_call)
+                await session.flush()
+                cost_record = await self._cost_tracker.record(
+                    session,
+                    llm_call_id=llm_call.id,
+                    task_id=task.id,
+                    agent_role=task_step.agent_role,
                 )
                 if llm_response.get("output_rails_json", {}).get("pii", {}).get("redacted"):
                     await self._audit_service.record_guardrail_event(
@@ -744,6 +765,8 @@ class AgentOrchestrator:
                 await session.commit()
 
             await self._record_retry_events(session, task, step, result.get("retry_events", []))
+            if result.get("kind") == "llm_reasoning":
+                await self._publish_cost_update(state["task_id"], cost_record)
 
         await self._event_bus.publish(
             state["task_id"],
@@ -791,17 +814,34 @@ class AgentOrchestrator:
             task.status = TaskStatus.COMPLETED
             task.final_response = final_response
             task.completed_at = datetime.now(UTC)
+            confidence = await self._confidence_scorer.score_task(session, task_id=task.id)
             await session.commit()
 
-            await self._audit_service.record_event(
-                session,
-                event_type="task.completed",
-                actor="system",
-                payload={"task_id": state["task_id"], "final_response": final_response},
-                session_id=task.session_id,
-                task_id=task.id,
-            )
+            if task.status == TaskStatus.COMPLETED:
+                await self._audit_service.record_event(
+                    session,
+                    event_type="task.completed",
+                    actor="system",
+                    payload={"task_id": state["task_id"], "final_response": final_response},
+                    session_id=task.session_id,
+                    task_id=task.id,
+                )
 
+        await self._publish_confidence_update(state["task_id"], confidence)
+        if task.status == TaskStatus.AWAITING_APPROVAL:
+            approval_id = await self._latest_approval_id(UUID(state["task_id"]))
+            if approval_id is not None:
+                await self._event_bus.publish(
+                    state["task_id"],
+                    "approval_requested",
+                    {
+                        "approval_id": approval_id,
+                        "risk_level": RiskLevel.LOW.value,
+                        "risk_reason": "confidence_gate",
+                        "action_summary": "Operator review required for a low-confidence task result.",
+                    },
+                )
+            return {**state, "final_response": final_response}
         await self._event_bus.publish(state["task_id"], "task_completed", {"final_response": final_response})
         return {**state, "final_response": final_response}
 
@@ -813,6 +853,7 @@ class AgentOrchestrator:
             task.status = TaskStatus.FAILED
             task.error = error
             task.completed_at = datetime.now(UTC)
+            confidence = await self._confidence_scorer.score_task(session, task_id=task.id)
             await session.commit()
 
             await self._audit_service.record_event(
@@ -824,6 +865,7 @@ class AgentOrchestrator:
                 task_id=task.id,
             )
 
+        await self._publish_confidence_update(task_id, confidence)
         await self._event_bus.publish(task_id, "task_failed", {"error": error})
 
     async def _pause_for_approval(
@@ -1042,6 +1084,32 @@ class AgentOrchestrator:
                     "error": retry_event["error"],
                 },
             )
+
+    async def _publish_cost_update(self, task_id: UUID | str, cost_record) -> None:
+        await self._event_bus.publish(
+            task_id,
+            "cost_update",
+            {
+                "llm_call_id": str(cost_record.llm_call_id) if cost_record.llm_call_id else None,
+                "agent_role": cost_record.agent_role.value if hasattr(cost_record.agent_role, "value") else str(cost_record.agent_role),
+                "prompt_tokens": cost_record.prompt_tokens,
+                "completion_tokens": cost_record.completion_tokens,
+                "usd_cost": round(cost_record.usd_cost, 8),
+                "model": cost_record.model,
+            },
+        )
+
+    async def _publish_confidence_update(self, task_id: UUID | str, confidence) -> None:
+        await self._event_bus.publish(
+            task_id,
+            "confidence_update",
+            {
+                "value": confidence.value,
+                "heuristic_value": confidence.heuristic_value,
+                "self_reported_value": confidence.self_reported_value,
+                "factors": confidence.factors_json,
+            },
+        )
 
     @staticmethod
     def _step_type_for(step_type: str) -> StepType:
