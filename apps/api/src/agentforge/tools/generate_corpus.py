@@ -62,6 +62,50 @@ TOPICS = [
     "Continuous Verification for Agents",
 ]
 
+KNOWLEDGE_DOCS: dict[str, str] = {
+    "hr-policy.md": (
+        "---\n"
+        "title: HR Policy Guardrails\n"
+        "topic: workforce policy\n"
+        "summary: Internal HR guidance for safe workforce reporting and protected field handling.\n"
+        "---\n\n"
+        "# HR Policy Guardrails\n\n"
+        "Workforce analytics should prefer bounded staffing and assignment views over broad compensation extracts. "
+        "Protected fields such as salary bands require an approval checkpoint before they are exposed in reports or "
+        "operator workflows.\n"
+    ),
+    "project-taxonomy.md": (
+        "---\n"
+        "title: Project Taxonomy\n"
+        "topic: taxonomy\n"
+        "summary: Reference taxonomy for research, engineering, and workforce tasks in AgentForge.\n"
+        "---\n\n"
+        "# Project Taxonomy\n\n"
+        "AgentForge groups work into workforce analytics, corpus research, repository health, and customer "
+        "communication so that skills can keep tools and policies tightly scoped.\n"
+    ),
+    "tone-of-voice.md": (
+        "---\n"
+        "title: Tone Of Voice\n"
+        "topic: communication\n"
+        "summary: Communication guidance for summaries and outward-facing responses.\n"
+        "---\n\n"
+        "# Tone Of Voice\n\n"
+        "Customer and operator messaging should be calm, precise, and explicit about what was found, what remains "
+        "uncertain, and what safe next step is recommended.\n"
+    ),
+    "repo-health-guide.md": (
+        "---\n"
+        "title: Repository Health Guide\n"
+        "topic: repository health\n"
+        "summary: Practical guidance for assessing repository health through safe GitHub reads.\n"
+        "---\n\n"
+        "# Repository Health Guide\n\n"
+        "Repository health reviews should stay read-only and emphasize signals like documentation quality, backlog "
+        "shape, and maintenance cadence instead of guessing about hidden project state.\n"
+    ),
+}
+
 
 def slugify(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
@@ -147,6 +191,11 @@ def generate_corpus(output_dir: Path | None = None) -> list[Path]:
         filename = f"{ordinal:02d}-{slugify(title)}.md"
         path = destination / filename
         path.write_text(build_document(title, ordinal), encoding="utf-8")
+        written.append(path)
+
+    for filename, content in KNOWLEDGE_DOCS.items():
+        path = destination / filename
+        path.write_text(content, encoding="utf-8")
         written.append(path)
 
     return written

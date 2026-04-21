@@ -25,6 +25,7 @@ class Settings(BaseSettings):
 
     corpus_path: str = "fixtures/corpus"
     synthetic_db_path: str = "fixtures/synthetic.sqlite"
+    skills_path: str = "apps/api/src/agentforge/skills"
     github_token: str | None = None
 
     orchestrator_checkpoint_path: str = "runtime/orchestrator_checkpoints.sqlite"

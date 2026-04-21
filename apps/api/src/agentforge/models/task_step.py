@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from agentforge.models.agent_run import AgentRun
     from agentforge.models.approval import Approval
     from agentforge.models.llm_call import LLMCall
+    from agentforge.models.skill import SkillInvocation
     from agentforge.models.task import Task
     from agentforge.models.tool_call import ToolCall
 
@@ -90,6 +91,10 @@ class TaskStep(Base, TimestampMixin):
         cascade="all, delete-orphan",
     )
     llm_calls: Mapped[list["LLMCall"]] = relationship(
+        back_populates="task_step",
+        cascade="all, delete-orphan",
+    )
+    skill_invocations: Mapped[list["SkillInvocation"]] = relationship(
         back_populates="task_step",
         cascade="all, delete-orphan",
     )

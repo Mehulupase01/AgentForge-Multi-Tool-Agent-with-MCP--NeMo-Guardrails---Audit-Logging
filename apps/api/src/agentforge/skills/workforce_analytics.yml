@@ -1,0 +1,23 @@
+name: workforce_analytics
+version: "1.0.0"
+agent_role: analyst
+description: "Answer questions about employees, projects, and assignments from the synthetic corporate database."
+tools:
+  - sqlite_query.list_employees
+  - sqlite_query.list_projects
+  - sqlite_query.run_select
+knowledge_refs:
+  - fixtures/corpus/hr-policy.md
+  - fixtures/corpus/project-taxonomy.md
+policy:
+  max_results_per_call: 50
+  forbid_fields:
+    - salary_band
+  require_approval_if:
+    - join_contains:
+        - salary_band
+    - no_limit_clause: true
+  topic_scope:
+    - workforce
+    - projects
+    - assignments

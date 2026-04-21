@@ -1,0 +1,20 @@
+name: corporate_research
+version: "1.0.0"
+agent_role: researcher
+description: "Research company, market, and corpus evidence through controlled file and web tools."
+tools:
+  - file_search.search_corpus
+  - file_search.read_document
+  - web_fetch.fetch_url
+knowledge_refs:
+  - fixtures/corpus/project-taxonomy.md
+  - fixtures/corpus/tone-of-voice.md
+policy:
+  max_results_per_call: 5
+  topic_scope:
+    - research
+    - market
+    - policy
+    - corpus
+  rate_limit:
+    per_minute: 30

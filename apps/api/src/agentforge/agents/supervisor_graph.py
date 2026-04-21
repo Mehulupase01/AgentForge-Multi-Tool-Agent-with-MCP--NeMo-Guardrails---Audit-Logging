@@ -21,6 +21,7 @@ from agentforge.services.approval_service import ApprovalService, RiskAssessment
 from agentforge.services.audit_service import AuditService
 from agentforge.services.mcp_client_pool import MCPClientPool
 from agentforge.services.self_healing import SelfHealingOutcome, SelfHealingWrapper
+from agentforge.services.skills_registry import SkillContext, SkillsRegistry, _get_or_create_skills_registry
 from agentforge.services.task_event_bus import TaskEventBus
 
 
@@ -43,6 +44,7 @@ class SupervisorGraph:
         audit_service: AuditService,
         approval_service: ApprovalService,
         llm_provider,
+        skills_registry: SkillsRegistry | None = None,
     ) -> None:
         self._session_factory = session_factory
         self._mcp_pool = mcp_pool
@@ -51,6 +53,7 @@ class SupervisorGraph:
         self._approval_service = approval_service
         self._self_healing = SelfHealingWrapper(llm_provider)
         self._orchestrator = OrchestratorAgent(llm_provider)
+        self._skills_registry = skills_registry or _get_or_create_skills_registry(session_factory=session_factory)
 
     async def run(self, task_id: UUID, user_prompt: str) -> SupervisorExecutionResult:
         handoffs = await self._orchestrator.route(user_prompt)
@@ -181,12 +184,76 @@ class SupervisorGraph:
         tool_name = request.tool_name.split(".", 1)[-1]
         allowed_tools = set(AGENT_CAPABILITIES[role].tool_scope)
         qualified_tool = f"{server_name}.{tool_name}"
+        task_context = await self._load_skill_context(
+            task_id=task_id,
+            user_prompt=user_prompt,
+            role=role,
+            handoff=handoff,
+        )
         if qualified_tool not in allowed_tools:
             await self._record_guardrail_rejection(task_id, role, handoff, qualified_tool, agent_run_id)
             return {
                 "role": role.value,
                 "summary": f"{role.value} attempted out-of-scope tool {qualified_tool} and was rejected.",
                 "data": {"rejected_tool": qualified_tool},
+                "rejected": True,
+            }
+
+        await self._skills_registry.ensure_loaded()
+        skill = self._skills_registry.get_skill_for_role(role)
+        evaluation = self._skills_registry.evaluate(
+            skill=skill,
+            tool_name=qualified_tool,
+            args=request.args,
+            task_context=task_context,
+        )
+
+        if not evaluation.allowed:
+            await self._record_skill_policy_step(
+                task_id=task_id,
+                role=role,
+                handoff=handoff,
+                qualified_tool=qualified_tool,
+                reason=evaluation.violation_reason or "Skill policy blocked the request.",
+                agent_run_id=agent_run_id,
+                suggested_role=evaluation.reroute_role,
+            )
+            await self._skills_registry.record_policy_violation(
+                task_id=task_id,
+                session_id=task_context.session_id,
+                role=role,
+                skill=skill,
+                tool_name=qualified_tool,
+                reason=evaluation.violation_reason or "Skill policy blocked the request.",
+                policy_checks=evaluation.policy_checks,
+            )
+            if evaluation.reroute_role is not None:
+                reroute_handoff: HandoffMessage = {
+                    "to": evaluation.reroute_role.value,
+                    "reason": f"Skill policy rerouted: {handoff['reason']}",
+                    "payload": dict(handoff["payload"]),
+                }
+                await self._event_bus.publish(
+                    task_id,
+                    "agent_handoff",
+                    {
+                        "from": role.value,
+                        "to": evaluation.reroute_role.value,
+                        "reason": evaluation.violation_reason or "Skill topic scope mismatch.",
+                    },
+                )
+                reroute_run_id = await self._create_agent_run(task_id, evaluation.reroute_role, agent_run_id, reroute_handoff)
+                return await self._run_specialist(
+                    task_id,
+                    user_prompt,
+                    evaluation.reroute_role,
+                    reroute_handoff,
+                    reroute_run_id,
+                )
+            return {
+                "role": role.value,
+                "summary": evaluation.violation_reason or f"{role.value} was blocked by skill policy.",
+                "data": {"policy_checks": evaluation.policy_checks},
                 "rejected": True,
             }
 
@@ -198,6 +265,22 @@ class SupervisorGraph:
             tool=tool_name,
             args=request.args,
         )
+        if evaluation.requires_approval:
+            approval_id = await self._request_skill_policy_approval(
+                task_id=task_id,
+                step=step,
+                role=role,
+                reason=evaluation.approval_reason or f"Skill {skill.name} requires approval.",
+                summary=request.description,
+            )
+            return {
+                "role": role.value,
+                "summary": evaluation.approval_reason or f"{role.value} is awaiting operator approval.",
+                "data": {"approval_id": approval_id},
+                "awaiting_approval": True,
+            }
+
+        evaluation.policy_checks["rate_limit"] = await self._skills_registry.await_rate_limit(skill)
         healing = await self._self_healing.execute(
             step=step,
             input_payload={"server": server_name, "tool": tool_name, "args": request.args},
@@ -208,7 +291,7 @@ class SupervisorGraph:
         )
 
         history_root_step_id = await self._record_history_entries(task_id, role, step, healing.history_entries, agent_run_id)
-        await self._record_retry_events(task_id, role, step.step_id, healing.retry_events)
+        await self._record_retry_events(task_id, role, step.step_id, healing.retry_events, agent_run_id)
 
         if healing.needs_approval:
             approval_id = await self._request_operator_review(task_id, step, role, healing, handoff)
@@ -228,19 +311,40 @@ class SupervisorGraph:
                 "rejected": True,
             }
 
-        tool_result = healing.output
-        summary = SpecialistSummarizer.summarize(role, tool_result)
-        await self._record_tool_step(
+        dispatch_result = self._skills_registry.apply_post_policies(
+            skill=skill,
+            result=healing.output,
+            prior_checks=evaluation.policy_checks,
+        )
+        summary = SpecialistSummarizer.summarize(role, dispatch_result.agent_result)
+        task_step_id = await self._record_tool_step(
             task_id=task_id,
             role=role,
             step=step,
-            result=tool_result,
+            result=dispatch_result.step_output,
             agent_run_id=agent_run_id,
             attempt=healing.attempt,
             step_type=healing.step_type_override or StepType.TOOL_CALL,
             parent_step_id=history_root_step_id if healing.parent_to_history_root else None,
         )
-        return {"role": role.value, "summary": summary, "data": tool_result}
+        await self._skills_registry.record_invocation(
+            task_step_id=task_step_id,
+            task_id=task_id,
+            session_id=task_context.session_id,
+            skill=skill,
+            policy_checks=dispatch_result.policy_checks,
+            injected_knowledge_tokens=dispatch_result.injected_knowledge_tokens,
+        )
+        await self._event_bus.publish(
+            task_id,
+            "skill_invoked",
+            {
+                "role": role.value,
+                "skill_name": skill.name,
+                "task_step_id": str(task_step_id),
+            },
+        )
+        return {"role": role.value, "summary": summary, "data": dispatch_result.agent_result}
 
     async def _record_tool_step(
         self,
@@ -253,7 +357,7 @@ class SupervisorGraph:
         attempt: int,
         step_type: StepType,
         parent_step_id: UUID | None,
-    ) -> None:
+    ) -> UUID:
         async with self._session_factory() as session:
             task = await session.get(Task, task_id)
             if task is None:
@@ -311,6 +415,7 @@ class SupervisorGraph:
                 "agent_role": role.value,
             },
         )
+        return task_step.id
 
     async def _record_guardrail_rejection(
         self,
@@ -500,6 +605,7 @@ class SupervisorGraph:
         role: AgentRole,
         step_id: str,
         retry_events: list[dict[str, Any]],
+        agent_run_id: UUID,
     ) -> None:
         if not retry_events:
             return
@@ -508,7 +614,52 @@ class SupervisorGraph:
             task = await session.get(Task, task_id)
             if task is None:
                 raise RuntimeError("Task not found while recording specialist retry event")
+            reflection_present = bool(
+                (
+                    await session.execute(
+                        select(func.count()).select_from(TaskStep).where(
+                            TaskStep.task_id == task_id,
+                            TaskStep.agent_role == role,
+                            TaskStep.step_type == StepType.REFLECTION,
+                        ),
+                    )
+                ).scalar_one()
+            )
             for retry_event in retry_events:
+                if not reflection_present:
+                    session.add(
+                        TaskStep(
+                            task_id=task_id,
+                            ordinal=await self._next_ordinal(session, task_id),
+                            step_type=StepType.REFLECTION,
+                            description=f"Reflect on failure in {step_id}",
+                            status=StepStatus.COMPLETED,
+                            agent_role=role,
+                            attempt=max(1, int(retry_event["attempt"]) - 1),
+                            agent_run_id=agent_run_id,
+                            input_json={"step_id": step_id},
+                            output_json={"text": f"Retry triggered after failure: {retry_event['error']}"},
+                            started_at=datetime.now(UTC),
+                            completed_at=datetime.now(UTC),
+                        )
+                    )
+                    reflection_present = True
+                session.add(
+                    TaskStep(
+                        task_id=task_id,
+                        ordinal=await self._next_ordinal(session, task_id),
+                        step_type=StepType.RETRY,
+                        description=f"Retry {retry_event['attempt']} for {step_id}",
+                        status=StepStatus.COMPLETED,
+                        agent_role=role,
+                        attempt=int(retry_event["attempt"]),
+                        agent_run_id=agent_run_id,
+                        input_json={"step_id": step_id},
+                        output_json={"error": retry_event["error"]},
+                        started_at=datetime.now(UTC),
+                        completed_at=datetime.now(UTC),
+                    )
+                )
                 await self._audit_service.record_event(
                     session,
                     event_type="agent.retry",
@@ -578,6 +729,99 @@ class SupervisorGraph:
                 task_id=task.id,
             )
         await self._event_bus.publish(task_id, "task_failed", {"error": healing.error})
+
+    async def _load_skill_context(
+        self,
+        *,
+        task_id: UUID,
+        user_prompt: str,
+        role: AgentRole,
+        handoff: HandoffMessage,
+    ) -> SkillContext:
+        async with self._session_factory() as session:
+            task = await session.get(Task, task_id)
+            if task is None:
+                raise RuntimeError("Task not found while building skill context")
+            return SkillContext(
+                task_id=task_id,
+                session_id=task.session_id,
+                user_prompt=user_prompt,
+                handoff_reason=handoff["reason"],
+                handoff_payload=handoff["payload"],
+                agent_role=role,
+            )
+
+    async def _record_skill_policy_step(
+        self,
+        *,
+        task_id: UUID,
+        role: AgentRole,
+        handoff: HandoffMessage,
+        qualified_tool: str,
+        reason: str,
+        agent_run_id: UUID,
+        suggested_role: AgentRole | None,
+    ) -> None:
+        async with self._session_factory() as session:
+            task = await session.get(Task, task_id)
+            if task is None:
+                raise RuntimeError("Task not found while recording skill policy step")
+            session.add(
+                TaskStep(
+                    task_id=task_id,
+                    ordinal=await self._next_ordinal(session, task_id),
+                    step_type=StepType.GUARDRAIL_BLOCK,
+                    description=reason,
+                    status=StepStatus.SKIPPED,
+                    agent_role=role,
+                    attempt=1,
+                    agent_run_id=agent_run_id,
+                    input_json={"tool": qualified_tool, "payload": handoff["payload"]},
+                    output_json={"rerouted_to": suggested_role.value if suggested_role else None},
+                    started_at=datetime.now(UTC),
+                    completed_at=datetime.now(UTC),
+                )
+            )
+            await session.commit()
+
+    async def _request_skill_policy_approval(
+        self,
+        *,
+        task_id: UUID,
+        step: PlanStep,
+        role: AgentRole,
+        reason: str,
+        summary: str,
+    ) -> str:
+        async with self._session_factory() as session:
+            task = await session.get(Task, task_id)
+            if task is None:
+                raise RuntimeError("Task not found while requesting skill policy approval")
+            context = await self._approval_service.ensure_approval(
+                session,
+                task=task,
+                step=step,
+                assessment=RiskAssessment(
+                    risk_level=RiskLevel.MEDIUM,
+                    reason=reason,
+                    summary=summary,
+                ),
+                checkpoint_id=str(task_id),
+            )
+            approval_id = str(context.approval.id)
+
+        if context.created:
+            await self._event_bus.publish(
+                task_id,
+                "approval_requested",
+                {
+                    "approval_id": approval_id,
+                    "risk_level": context.assessment.risk_level.value,
+                    "risk_reason": context.assessment.reason,
+                    "action_summary": context.assessment.summary,
+                },
+            )
+        return approval_id
 
     async def _request_operator_review(
         self,

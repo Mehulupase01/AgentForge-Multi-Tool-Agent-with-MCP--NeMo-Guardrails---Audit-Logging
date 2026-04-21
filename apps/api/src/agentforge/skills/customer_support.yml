@@ -1,0 +1,16 @@
+name: customer_support
+version: "1.0.0"
+agent_role: secretary
+description: "Draft customer-safe summaries and responses with consistent tone and escalation discipline."
+tools: []
+knowledge_refs:
+  - fixtures/corpus/tone-of-voice.md
+  - fixtures/corpus/hr-policy.md
+policy:
+  topic_scope:
+    - customer
+    - support
+    - response
+    - summary
+  rate_limit:
+    per_minute: 40

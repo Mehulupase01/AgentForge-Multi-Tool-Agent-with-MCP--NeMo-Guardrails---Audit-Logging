@@ -1,0 +1,21 @@
+name: repo_health
+version: "1.0.0"
+agent_role: engineer
+description: "Inspect repository health signals and open engineering work through the GitHub toolset."
+tools:
+  - github.list_user_repos
+  - github.search_issues
+  - github.get_repo
+knowledge_refs:
+  - fixtures/corpus/repo-health-guide.md
+  - fixtures/corpus/project-taxonomy.md
+policy:
+  max_results_per_call: 20
+  topic_scope:
+    - github
+    - repo
+    - repository
+    - issue
+    - health
+  rate_limit:
+    per_minute: 20

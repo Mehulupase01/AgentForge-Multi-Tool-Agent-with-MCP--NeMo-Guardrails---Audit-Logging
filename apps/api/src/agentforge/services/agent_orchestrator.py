@@ -30,6 +30,7 @@ from agentforge.services.llm_provider import LLMProvider
 from agentforge.services.mcp_client_pool import MCPClientPool
 from agentforge.services.replay_service import ReplayService
 from agentforge.services.self_healing import SelfHealingWrapper
+from agentforge.services.skills_registry import SkillsRegistry
 from agentforge.services.task_event_bus import TaskEventBus
 
 
@@ -60,6 +61,7 @@ class AgentOrchestrator:
         approval_service: ApprovalService,
         audit_service: AuditService | None = None,
         checkpoint_path: str | None = None,
+        skills_registry: SkillsRegistry | None = None,
     ) -> None:
         self._session_factory = session_factory
         self._mcp_pool = mcp_pool
@@ -87,6 +89,7 @@ class AgentOrchestrator:
             audit_service=self._audit_service,
             approval_service=approval_service,
             llm_provider=llm_provider,
+            skills_registry=skills_registry,
         )
 
     @property

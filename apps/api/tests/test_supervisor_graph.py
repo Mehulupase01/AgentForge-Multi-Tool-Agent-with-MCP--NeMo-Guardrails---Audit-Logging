@@ -171,6 +171,56 @@ async def wait_for_task_approval(session_factory, task_id: str) -> Approval:
     raise TimeoutError(f"Timed out waiting for an approval row for task {task_id}")
 
 
+async def wait_for_linked_steps(session_factory, task_id: str, expected_count: int) -> int:
+    deadline = asyncio.get_running_loop().time() + 5
+    while asyncio.get_running_loop().time() < deadline:
+        async with session_factory() as session:
+            runs = list((await session.execute(select(AgentRun).where(AgentRun.task_id == UUID(task_id)))).scalars())
+            run_ids = {run.id for run in runs if run.role != AgentRole.ORCHESTRATOR}
+            linked_count = int(
+                (
+                    await session.execute(
+                        select(func.count()).select_from(TaskStep).where(TaskStep.task_id == UUID(task_id), TaskStep.agent_run_id.in_(run_ids)),
+                    )
+                ).scalar_one()
+            )
+        if linked_count >= expected_count:
+            return linked_count
+        await asyncio.sleep(0.05)
+    raise TimeoutError(f"Timed out waiting for {expected_count} linked task steps for task {task_id}")
+
+
+async def wait_for_step(session_factory, task_id: str, role: AgentRole, step_type: str) -> bool:
+    deadline = asyncio.get_running_loop().time() + 5
+    while asyncio.get_running_loop().time() < deadline:
+        async with session_factory() as session:
+            steps = list(
+                (
+                    await session.execute(
+                        select(TaskStep).where(TaskStep.task_id == UUID(task_id)).order_by(TaskStep.ordinal.asc())
+                    )
+                ).scalars()
+            )
+        if any(step.agent_role == role and step.step_type.value == step_type for step in steps):
+            return True
+        await asyncio.sleep(0.05)
+    return False
+
+
+async def wait_for_retry_event(session_factory, task_id: str, role: AgentRole) -> bool:
+    deadline = asyncio.get_running_loop().time() + 5
+    while asyncio.get_running_loop().time() < deadline:
+        async with session_factory() as session:
+            events = list((await session.execute(select(AuditEvent).where(AuditEvent.event_type == "agent.retry"))).scalars())
+        if any(
+            event.task_id == UUID(task_id) and event.payload_json.get("role") == role.value
+            for event in events
+        ):
+            return True
+        await asyncio.sleep(0.05)
+    return False
+
+
 @pytest_asyncio.fixture
 async def guardrails_runner(tmp_path: Path) -> GuardrailsRunner:
     return GuardrailsRunner(tool_allowlist=ToolAllowlist(write_allowlist(tmp_path / "tool_allowlist.yml")))
@@ -314,14 +364,8 @@ async def test_agent_runs_linked_to_task_steps(supervisor_client: AsyncClient, s
     async with session_factory() as session:
         runs = list((await session.execute(select(AgentRun).where(AgentRun.task_id == UUID(task_id)))).scalars())
         run_ids = {run.id for run in runs if run.role != AgentRole.ORCHESTRATOR}
-        linked_count = int(
-            (
-                await session.execute(
-                    select(func.count()).select_from(TaskStep).where(TaskStep.task_id == UUID(task_id), TaskStep.agent_run_id.in_(run_ids)),
-                )
-            ).scalar_one()
-        )
     assert run_ids
+    linked_count = await wait_for_linked_steps(session_factory, task_id, len(run_ids))
     assert linked_count >= len(run_ids)
 
 
@@ -364,9 +408,12 @@ async def test_supervisor_retries_specialist_tool_call(session_factory, guardrai
         steps = list((await session.execute(select(TaskStep).where(TaskStep.task_id == UUID(task_id)).order_by(TaskStep.ordinal.asc()))).scalars())
         events = list((await session.execute(select(AuditEvent).where(AuditEvent.event_type == "agent.retry"))).scalars())
 
-    assert any(step.agent_role == AgentRole.RESEARCHER and step.step_type.value == "reflection" for step in steps)
-    assert any(step.agent_role == AgentRole.RESEARCHER and step.step_type.value == "retry" for step in steps)
-    assert any(event.payload_json.get("role") == AgentRole.RESEARCHER.value for event in events)
+    if not any(step.agent_role == AgentRole.RESEARCHER and step.step_type.value == "reflection" for step in steps):
+        assert await wait_for_step(session_factory, task_id, AgentRole.RESEARCHER, "reflection")
+    if not any(step.agent_role == AgentRole.RESEARCHER and step.step_type.value == "retry" for step in steps):
+        assert await wait_for_step(session_factory, task_id, AgentRole.RESEARCHER, "retry")
+    if not any(event.payload_json.get("role") == AgentRole.RESEARCHER.value for event in events):
+        assert await wait_for_retry_event(session_factory, task_id, AgentRole.RESEARCHER)
 
     await orchestrator.close()
     app.dependency_overrides.clear()

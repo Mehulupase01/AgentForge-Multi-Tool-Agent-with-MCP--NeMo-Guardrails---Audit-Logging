@@ -5,6 +5,7 @@ from agentforge.models.corpus import CorpusDocument
 from agentforge.models.llm_call import LLMCall
 from agentforge.models.redteam import RedteamCategory, RedteamOutcome, RedteamResult, RedteamRun
 from agentforge.models.session import Session, SessionStatus
+from agentforge.models.skill import Skill, SkillInvocation
 from agentforge.models.task import Task, TaskStatus
 from agentforge.models.task_step import StepStatus, StepType, TaskStep
 from agentforge.models.tool_call import ToolCall
@@ -25,6 +26,8 @@ __all__ = [
     "RiskLevel",
     "Session",
     "SessionStatus",
+    "Skill",
+    "SkillInvocation",
     "StepStatus",
     "StepType",
     "Task",
