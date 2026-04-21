@@ -31,6 +31,7 @@ This is not a toy chatbot repo. It is a full control plane for enterprise-style 
 - [Short Abstract](#short-abstract)
 - [Deep Introduction](#deep-introduction)
 - [Platform Snapshot](#platform-snapshot)
+- [V2 At A Glance](#v2-at-a-glance)
 - [What Makes This Different](#what-makes-this-different)
 - [System Architecture](#system-architecture)
 - [Architecture Deep Dive](#architecture-deep-dive)
@@ -44,6 +45,7 @@ This is not a toy chatbot repo. It is a full control plane for enterprise-style 
 - [UI Walkthrough](#ui-walkthrough)
 - [Evaluation and Verification](#evaluation-and-verification)
 - [Detailed Local Run Guide](#detailed-local-run-guide)
+- [V2 Quickstart](#v2-quickstart)
 - [Repository Layout](#repository-layout)
 - [Deployment Notes](#deployment-notes)
 - [Known Local Waivers](#known-local-waivers)
@@ -94,6 +96,23 @@ This repository also deliberately separates local workstation constraints from r
 | Governance | Append-only audit chain, approval decisions, integrity verification endpoints | Supports compliance, investigation, and post-run trust |
 | Operator UX | Streamlit console, CLI client, HTTP-first API | Makes the platform usable by operators as well as developers |
 | Evaluation | Persisted redteam runs, CI-backed gating, scenario scoring | Prevents safety drift from being invisible between releases |
+
+---
+
+## V2 At A Glance
+
+The `Multi-Agent-Orchestration` branch upgrades AgentForge from a single-orchestrator runtime into a supervised multi-agent system with durable recovery and operator telemetry.
+
+| v2 addition | What changed | Why it matters |
+| --- | --- | --- |
+| Supervisor graph | Six roles: `orchestrator`, `analyst`, `researcher`, `engineer`, `secretary`, `security_officer` | Tasks can be decomposed and routed intentionally instead of forcing one agent persona to do everything |
+| Self-healing | Deterministic reflect-and-retry flow with bounded escalation | Transient tool or model failures do not automatically become dead tasks |
+| Replay | Idempotent task replay with cached-step skipping | Crashed or interrupted runs can be resumed without blindly re-executing side effects |
+| Skills | YAML skill registry with a closed 5-key policy schema | Tool usage is packaged, reviewable, reloadable, and policy-bound |
+| Security Officer | Second-line review agent for risky plans, tool calls, and long outputs | High-risk work is reviewed by a specialist layer on top of base guardrails |
+| Triggers | Webhook and schedule driven task creation plus `trigger_worker` | The platform can proactively create work from external events instead of waiting for manual task submission |
+| AgentOps | Cost tracking, confidence scoring, handoff analytics, Streamlit dashboard | Operators can see whether the multi-agent runtime is reliable, cheap, and trustworthy |
+| v2 safety gate | Separate v2 redteam suite with 20 multi-agent scenarios | Release confidence stays measurable even as the system gets more capable |
 
 ---
 
@@ -825,6 +844,7 @@ Fill in at least:
 OPENROUTER_API_KEY=your_key_here
 OPENROUTER_MODEL=openrouter/free
 GITHUB_TOKEN=your_scoped_token_here
+TRIGGER_WORKER_INTERNAL_API_KEY=dev-key-change-me
 ```
 
 ### 2. Sync the API environment
@@ -853,6 +873,7 @@ uv run --directory apps/api agentforge ingest-corpus
 ```powershell
 uv run --directory apps/api pytest tests -q
 uv run --directory apps/api pytest tests/safety/test_redteam_suite.py -q
+uv run --directory apps/api pytest tests/safety/test_redteam_v2.py -q
 ```
 
 ### 6. Run the API
@@ -870,11 +891,40 @@ uv run --directory apps/cli agentforge approval list
 uv run --directory apps/cli agentforge audit verify
 ```
 
-### 8. Run the red-team CLI manually
+### 8. Run the trigger worker
+
+```powershell
+uv run --directory apps/trigger_worker uvicorn trigger_worker.server:app --app-dir src --host 0.0.0.0 --port 8105
+```
+
+### 9. Run the red-team CLI manually
 
 ```powershell
 uv run --directory apps/api agentforge redteam-run
+uv run --directory apps/api agentforge redteam-run --suite v2
 ```
+
+---
+
+## V2 Quickstart
+
+If you want to exercise the multi-agent branch specifically, this is the shortest high-signal path:
+
+1. Apply the v2 database head.
+   `uv run --directory apps/api alembic upgrade head`
+2. Start the API and trigger worker in two terminals.
+   `uv run --directory apps/api uvicorn agentforge.main:app --app-dir src --host 0.0.0.0 --port 8000`
+   `uv run --directory apps/trigger_worker uvicorn trigger_worker.server:app --app-dir src --host 0.0.0.0 --port 8105`
+3. Start the Streamlit UI.
+   `uv run --directory apps/ui streamlit run src/agentforge_ui/Home.py`
+4. Create a task that requires planning and synthesis.
+   Example: `Summarize the latest relevant corpus guidance, propose an implementation plan, and identify any security review points.`
+5. Watch the task stream or the AgentOps page.
+   You should see handoffs, retries when applicable, review decisions, cost updates, and confidence scoring.
+6. Exercise replay.
+   `uv run --directory apps/api agentforge task-replay <task-id>`
+7. Exercise both safety gates before calling the branch release-ready.
+   `uv run --directory apps/api pytest tests/safety/test_redteam_suite.py tests/safety/test_redteam_v2.py -v`
 
 ---
 
@@ -894,6 +944,8 @@ apps/
     tests/
   cli/
     src/agentforge_cli/
+  trigger_worker/
+    src/trigger_worker/
   ui/
     src/agentforge_ui/
     tests/
@@ -921,6 +973,7 @@ The root `uv` workspace includes:
 - `agentforge-api`
 - `agentforge-cli`
 - `agentforge-ui`
+- `agentforge-trigger-worker`
 - `file-search-mcp`
 - `web-fetch-mcp`
 - `sqlite-query-mcp`

@@ -17,6 +17,13 @@ class RedteamCategory(str, Enum):
     JAILBREAK = "jailbreak"
     TOOL_ABUSE = "tool_abuse"
     GOAL_HIJACK = "goal_hijack"
+    MULTI_AGENT_HANDOFF_ABUSE = "multi_agent_handoff_abuse"
+    SECURITY_OFFICER_BYPASS = "security_officer_bypass"
+    SKILL_POLICY_BYPASS = "skill_policy_bypass"
+    TRIGGER_SPOOFING = "trigger_spoofing"
+    CONFIDENCE_ATTACK = "confidence_attack"
+    COST_EXFIL = "cost_exfil"
+    REPLAY_SAFETY = "replay_safety"
 
 
 class RedteamOutcome(str, Enum):

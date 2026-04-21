@@ -299,7 +299,11 @@ class TriggerService:
         headers: dict[str, str],
         raw_body: bytes,
     ) -> bool:
-        secret = trigger.secret or settings.github_webhook_secret or ""
+        if source == TriggerSource.GITHUB_WEBHOOK:
+            default_secret = settings.github_webhook_secret or ""
+        else:
+            default_secret = settings.generic_webhook_secret or ""
+        secret = trigger.secret or default_secret
         if not secret:
             return False
         digest = hmac.new(secret.encode("utf-8"), raw_body, hashlib.sha256).hexdigest()

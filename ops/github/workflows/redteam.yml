@@ -8,8 +8,11 @@ on:
   pull_request:
     paths:
       - "apps/api/**"
+      - "apps/trigger_worker/**"
       - ".github/workflows/redteam.yml"
+      - ".github/workflows/ci.yml"
       - "ops/github/workflows/redteam.yml"
+      - "ops/github/workflows/ci.yml"
       - "uv.lock"
 
 jobs:
@@ -42,21 +45,30 @@ jobs:
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           else
             echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "OPENROUTER_API_KEY is not configured; skipping the live redteam CLI gate and running the deterministic safety suite only."
+            echo "OPENROUTER_API_KEY is not configured; skipping the optional live redteam CLI gate and running the deterministic safety suites only."
           fi
 
       - name: Upgrade database
         working-directory: apps/api
         run: uv run python -m alembic -c alembic.ini upgrade head
 
-      - name: Run redteam CLI
+      - name: Run live v1 redteam CLI
         if: steps.live_redteam.outputs.enabled == 'true'
         working-directory: apps/api
         run: uv run agentforge redteam-run
 
-      - name: Run redteam pytest suite
+      - name: Run live v2 redteam CLI
+        if: steps.live_redteam.outputs.enabled == 'true'
         working-directory: apps/api
-        run: uv run pytest tests/safety/test_redteam_suite.py -v --junitxml=redteam-pytest.xml
+        run: uv run agentforge redteam-run --suite v2
+
+      - name: Run deterministic v1 redteam suite
+        working-directory: apps/api
+        run: uv run pytest tests/safety/test_redteam_suite.py -v --junitxml=redteam-v1-pytest.xml
+
+      - name: Run deterministic v2 redteam suite
+        working-directory: apps/api
+        run: uv run pytest tests/safety/test_redteam_v2.py -v --junitxml=redteam-v2-pytest.xml
 
       - name: Upload reports
         if: always()
@@ -65,5 +77,7 @@ jobs:
           name: redteam-reports
           if-no-files-found: ignore
           path: |
-            apps/api/redteam-report.xml
-            apps/api/redteam-pytest.xml
+            apps/api/redteam-v1-report.xml
+            apps/api/redteam-v2-report.xml
+            apps/api/redteam-v1-pytest.xml
+            apps/api/redteam-v2-pytest.xml

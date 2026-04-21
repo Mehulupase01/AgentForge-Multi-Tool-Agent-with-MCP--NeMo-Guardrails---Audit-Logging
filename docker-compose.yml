@@ -16,7 +16,10 @@ services:
       MCP_WEB_FETCH_URL: http://web_fetch:8102/mcp
       MCP_SQLITE_QUERY_URL: http://sqlite_query:8103/mcp
       MCP_GITHUB_URL: http://github:8104/mcp
-      TRIGGER_WORKER_URL: http://trigger_worker:8105/health
+      TRIGGER_WORKER_URL: http://trigger_worker:8105
+      REPLAY_MAX_CHECKPOINT_AGE_HOURS: ${REPLAY_MAX_CHECKPOINT_AGE_HOURS:-72}
+      CONFIDENCE_GATE_THRESHOLD: ${CONFIDENCE_GATE_THRESHOLD:-80.0}
+      OPENAI_PRICES_PATH: ${OPENAI_PRICES_PATH:-fixtures/pricing/openai_prices.yml}
       ORCHESTRATOR_CHECKPOINT_PATH: runtime/orchestrator_checkpoints.sqlite
     ports:
       - "${API_PORT:-8000}:8000"
@@ -177,7 +180,7 @@ services:
     env_file: .env
     environment:
       AGENTFORGE_API_URL: http://api:8000
-      AGENTFORGE_API_KEY: ${API_KEY:-dev-key}
+      TRIGGER_WORKER_INTERNAL_API_KEY: ${TRIGGER_WORKER_INTERNAL_API_KEY:-dev-key}
     ports:
       - "8105:8105"
     depends_on:

@@ -2,7 +2,7 @@ name: ci
 
 on:
   push:
-    branches: ["main"]
+    branches: ["main", "Multi-Agent-Orchestration"]
   pull_request:
     branches: ["main"]
 
@@ -23,6 +23,16 @@ jobs:
       - run: uv sync --directory apps/api
       - run: uv pip install --python .venv/bin/python https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1-py3-none-any.whl
       - run: uv run --directory apps/api pytest -v
+
+  test-v2:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv python install 3.12
+      - run: uv sync --directory apps/api
+      - run: uv pip install --python .venv/bin/python https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1-py3-none-any.whl
+      - run: uv run --directory apps/api pytest tests/test_supervisor_graph.py tests/test_agents_roster.py tests/test_self_healing.py tests/test_replay.py tests/test_skills_registry.py tests/test_security_officer.py tests/test_triggers.py tests/test_cost_tracker.py tests/test_confidence_scorer.py tests/test_confidence_gate.py -v
 
   test-mcp:
     runs-on: ubuntu-latest
@@ -50,8 +60,9 @@ jobs:
       - run: docker build -f apps/mcp_servers/web_fetch/Dockerfile .
       - run: docker build -f apps/mcp_servers/sqlite_query/Dockerfile .
       - run: docker build -f apps/mcp_servers/github/Dockerfile .
+      - run: docker build -f apps/trigger_worker/Dockerfile .
       - run: docker build -f apps/ui/Dockerfile .
 
   redteam:
-    needs: [lint, test-api, test-mcp]
+    needs: [lint, test-api, test-v2, test-mcp]
     uses: ./.github/workflows/redteam.yml

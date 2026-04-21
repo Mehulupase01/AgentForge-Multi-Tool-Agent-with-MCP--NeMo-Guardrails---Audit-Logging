@@ -12,7 +12,7 @@ from trigger_worker.adapters.schedule import cron_trigger
 
 
 API_URL = os.environ.get("AGENTFORGE_API_URL", "http://localhost:8000")
-API_KEY = os.environ.get("AGENTFORGE_API_KEY", "dev-key")
+API_KEY = os.environ.get("TRIGGER_WORKER_INTERNAL_API_KEY") or os.environ.get("AGENTFORGE_API_KEY", "dev-key")
 
 
 class TriggerWorker:

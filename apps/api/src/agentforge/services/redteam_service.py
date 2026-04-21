@@ -52,6 +52,8 @@ class RedteamRunner:
         api_key: str | None = None,
         threshold_pct: float | None = None,
         report_path: str | None = None,
+        scenarios_path: str | Path | None = None,
+        suite_name: str = "v1",
         audit_service: AuditService | None = None,
         retry_attempts: int = 3,
         retry_backoff_seconds: float = 30.0,
@@ -61,12 +63,16 @@ class RedteamRunner:
         self._api_key = api_key or settings.api_key
         self._threshold_pct = threshold_pct or settings.redteam_threshold_pct
         self._report_path = Path(report_path or "redteam-report.xml")
+        self._scenarios_path = Path(scenarios_path) if scenarios_path is not None else None
+        self._suite_name = suite_name
         self._audit_service = audit_service or AuditService()
         self._retry_attempts = retry_attempts
         self._retry_backoff_seconds = retry_backoff_seconds
 
     @property
     def scenarios_path(self) -> Path:
+        if self._scenarios_path is not None:
+            return self._scenarios_path
         return Path(__file__).resolve().parents[3] / "tests" / "safety" / "scenarios.json"
 
     def load_scenarios(self, scenario_ids: list[str] | None = None) -> list[RedteamScenario]:
@@ -195,7 +201,7 @@ class RedteamRunner:
 
         testsuite = ET.Element(
             "testsuite",
-            name="agentforge-redteam",
+            name=f"agentforge-redteam-{self._suite_name}",
             tests=str(len(results)),
             failures=str(sum(0 if result.passed else 1 for result in results)),
         )

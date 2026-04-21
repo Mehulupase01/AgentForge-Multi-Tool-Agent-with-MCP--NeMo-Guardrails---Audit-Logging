@@ -15,6 +15,15 @@ from agentforge.services.mcp_client_pool import MCPClientPool, get_mcp_client_po
 router = APIRouter(prefix="/api/v1/health", tags=["health"])
 
 
+def _trigger_worker_health_url() -> str | None:
+    if not settings.trigger_worker_url:
+        return None
+    url = settings.trigger_worker_url.rstrip("/")
+    if url.endswith("/health"):
+        return url
+    return f"{url}/health"
+
+
 @router.get("/liveness")
 async def liveness() -> dict[str, str]:
     return {"status": "ok"}
@@ -46,10 +55,11 @@ async def readiness(
     server_statuses = await pool.connect_all()
     mcp_servers = {name: info.status for name, info in server_statuses.items()}
     worker_status = "disabled"
-    if settings.trigger_worker_url:
+    trigger_worker_health_url = _trigger_worker_health_url()
+    if trigger_worker_health_url:
         try:
             async with httpx.AsyncClient(timeout=3.0) as client:
-                response = await client.get(settings.trigger_worker_url)
+                response = await client.get(trigger_worker_health_url)
                 worker_status = "ok" if response.status_code == 200 else "unreachable"
         except Exception:
             worker_status = "unreachable"
@@ -63,7 +73,7 @@ async def readiness(
                 "workers": {"trigger_worker": worker_status},
             },
         )
-    if settings.trigger_worker_url and worker_status != "ok":
+    if trigger_worker_health_url and worker_status != "ok":
         return JSONResponse(
             status_code=503,
             content={

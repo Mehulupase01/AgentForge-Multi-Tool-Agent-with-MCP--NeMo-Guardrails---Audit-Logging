@@ -12,7 +12,7 @@ from sqlalchemy.orm import selectinload
 from sse_starlette.sse import EventSourceResponse
 
 from agentforge.models.agent_run import AgentRole, AgentRun
-from agentforge.database import get_db
+from agentforge.database import get_db, get_session_factory
 from agentforge.guardrails import GuardrailsRunner, get_guardrails_runner
 from agentforge.models.review_record import ReviewRecord
 from agentforge.models.session import Session
@@ -486,9 +486,29 @@ async def replay_task(
     orchestrator: Annotated[AgentOrchestrator, Depends(orchestrator_dependency)],
     approval_service: Annotated[ApprovalService, Depends(get_approval_service)],
 ) -> ReplayResponse:
+    async with orchestrator.session_factory() as preflight_db:
+        task = await require_task(preflight_db, task_id)
+        if task.status == TaskStatus.COMPLETED or (task.final_response is not None and not task.error):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "code": "CONFLICT",
+                    "message": "Completed tasks cannot be replayed",
+                    "detail": {"task_id": str(task_id), "from_checkpoint": body.from_checkpoint},
+                },
+            )
     await orchestrator.wait_until_idle(task_id)
     async with orchestrator.session_factory() as replay_db:
-        await require_task(replay_db, task_id)
+        task = await require_task(replay_db, task_id)
+        if task.status == TaskStatus.COMPLETED or (task.final_response is not None and not task.error):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "code": "CONFLICT",
+                    "message": "Completed tasks cannot be replayed",
+                    "detail": {"task_id": str(task_id), "from_checkpoint": body.from_checkpoint},
+                },
+            )
         replay_service = ReplayService(
             session_factory=orchestrator.session_factory,
             approval_service=approval_service,

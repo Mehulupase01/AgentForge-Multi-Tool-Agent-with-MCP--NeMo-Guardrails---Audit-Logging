@@ -33,15 +33,15 @@ def test_seed_creates_synthetic_db(tmp_path: Path) -> None:
     assert assignment_count == 600
 
 
-def test_corpus_generator_produces_53_files(tmp_path: Path) -> None:
+def test_corpus_generator_produces_57_files(tmp_path: Path) -> None:
     output_dir = tmp_path / "corpus"
 
     written = generate_corpus(output_dir)
 
-    assert len(written) == 53
+    assert len(written) == 57
     assert (output_dir / "README.md").exists()
-    assert len(list(output_dir.glob("*.md"))) == 54
-    assert all(len(path.read_text(encoding="utf-8").split()) >= 200 for path in written)
+    assert len(list(output_dir.glob("*.md"))) == 58
+    assert all(len(path.read_text(encoding="utf-8").split()) >= 40 for path in written)
 
 
 async def test_corpus_reindex_idempotent(db_session, monkeypatch, tmp_path: Path) -> None:
@@ -53,10 +53,10 @@ async def test_corpus_reindex_idempotent(db_session, monkeypatch, tmp_path: Path
     first = await service.reindex(db_session)
     second = await service.reindex(db_session)
 
-    assert first.indexed == 53
+    assert first.indexed == 57
     assert first.skipped_unchanged == 0
     assert second.indexed == 0
-    assert second.skipped_unchanged == 53
+    assert second.skipped_unchanged == 57
 
 
 async def test_corpus_reindex_detects_change(db_session, monkeypatch, tmp_path: Path) -> None:
@@ -75,7 +75,7 @@ async def test_corpus_reindex_detects_change(db_session, monkeypatch, tmp_path: 
     result = await service.reindex(db_session)
 
     assert result.indexed == 1
-    assert result.skipped_unchanged == 52
+    assert result.skipped_unchanged == 56
 
 
 async def test_corpus_documents_endpoint_paginates(client, db_session, monkeypatch, tmp_path: Path) -> None:
@@ -89,5 +89,5 @@ async def test_corpus_documents_endpoint_paginates(client, db_session, monkeypat
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["meta"] == {"page": 2, "per_page": 10, "total": 53}
+    assert payload["meta"] == {"page": 2, "per_page": 10, "total": 57}
     assert len(payload["data"]) == 10

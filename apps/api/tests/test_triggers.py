@@ -11,6 +11,7 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
+from agentforge.config import settings
 from agentforge.database import get_db
 from agentforge.main import create_app
 from agentforge.models.audit_event import AuditEvent
@@ -33,6 +34,10 @@ class StubOrchestrator:
 def sign_github(secret: str, body: bytes) -> str:
     digest = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
     return f"sha256={digest}"
+
+
+def sign_generic(secret: str, body: bytes) -> str:
+    return hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
 
 
 @pytest_asyncio.fixture
@@ -279,3 +284,43 @@ async def test_audit_emits_trigger_events(trigger_client, session_factory) -> No
         assert "trigger.received" in event_types
         assert "trigger.fired" in event_types
         assert "trigger.rejected" in event_types
+
+
+@pytest.mark.asyncio
+async def test_generic_webhook_uses_env_secret_fallback(trigger_client, session_factory) -> None:
+    client, orchestrator = trigger_client
+    previous_secret = settings.generic_webhook_secret
+    settings.generic_webhook_secret = "genericsecret"
+    try:
+        create = await client.post(
+            "/api/v1/triggers",
+            json={
+                "name": "generic-alert",
+                "source": "generic_webhook",
+                "config": {"event": "generic.alert"},
+                "prompt_template": "Handle {{ title }}",
+            },
+        )
+        assert create.status_code == 201
+
+        body = json.dumps({"title": "Security alert"}).encode("utf-8")
+        response = await client.post(
+            "/api/v1/triggers/webhook/generic",
+            content=body,
+            headers={
+                "content-type": "application/json",
+                "x-signature-256": sign_generic("genericsecret", body),
+            },
+        )
+
+        assert response.status_code == 202
+        payload = response.json()
+        assert payload["accepted"] is True
+        assert payload["task_id"] in orchestrator.started_task_ids
+
+        async with session_factory() as session:
+            event = await session.get(TriggerEvent, UUID(payload["trigger_event_id"]))
+            assert event is not None
+            assert event.signature_valid is True
+    finally:
+        settings.generic_webhook_secret = previous_secret

@@ -30,10 +30,12 @@ class Settings(BaseSettings):
     skills_path: str = "apps/api/src/agentforge/skills"
     github_token: str | None = None
     github_webhook_secret: str | None = None
+    generic_webhook_secret: str | None = None
 
     orchestrator_checkpoint_path: str = "runtime/orchestrator_checkpoints.sqlite"
     replay_max_checkpoint_age_hours: int = 72
     trigger_worker_url: str | None = None
+    trigger_worker_internal_api_key: str | None = None
     confidence_gate_threshold: float = 80.0
     openai_prices_path: str = "fixtures/pricing/openai_prices.yml"
 
