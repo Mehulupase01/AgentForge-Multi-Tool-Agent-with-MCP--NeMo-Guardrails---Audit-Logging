@@ -1,51 +1,53 @@
-# AgentForge
+# AgentForge v2
 
-### Multi-Tool Agent Platform with MCP, NeMo Guardrails, Human Approval, and Tamper-Evident Audit Logging
+### Multi-Agent Orchestration Platform with LangGraph Supervisor Graphs, MCP Tools, NeMo Guardrails, Replay, Skills, Triggers, AgentOps, and Tamper-Evident Audit Logging
 
-[![CI](https://github.com/Mehulupase01/AgentForge-Multi-Tool-Agent-with-MCP--NeMo-Guardrails---Audit-Logging/actions/workflows/ci.yml/badge.svg)](https://github.com/Mehulupase01/AgentForge-Multi-Tool-Agent-with-MCP--NeMo-Guardrails---Audit-Logging/actions/workflows/ci.yml)
-[![Red-Team](https://github.com/Mehulupase01/AgentForge-Multi-Tool-Agent-with-MCP--NeMo-Guardrails---Audit-Logging/actions/workflows/redteam.yml/badge.svg)](https://github.com/Mehulupase01/AgentForge-Multi-Tool-Agent-with-MCP--NeMo-Guardrails---Audit-Logging/actions/workflows/redteam.yml)
+[![CI](https://github.com/Mehulupase01/AgentForge-Multi-Tool-Agent-with-MCP--NeMo-Guardrails---Audit-Logging/actions/workflows/ci.yml/badge.svg?branch=Multi-Agent-Orchestration)](https://github.com/Mehulupase01/AgentForge-Multi-Tool-Agent-with-MCP--NeMo-Guardrails---Audit-Logging/actions/workflows/ci.yml?query=branch%3AMulti-Agent-Orchestration)
+[![Red-Team](https://github.com/Mehulupase01/AgentForge-Multi-Tool-Agent-with-MCP--NeMo-Guardrails---Audit-Logging/actions/workflows/redteam.yml/badge.svg?branch=Multi-Agent-Orchestration)](https://github.com/Mehulupase01/AgentForge-Multi-Tool-Agent-with-MCP--NeMo-Guardrails---Audit-Logging/actions/workflows/redteam.yml?query=branch%3AMulti-Agent-Orchestration)
+[![Branch](https://img.shields.io/badge/Branch-Multi--Agent--Orchestration-2EA043?style=flat-square)](https://github.com/Mehulupase01/AgentForge-Multi-Tool-Agent-with-MCP--NeMo-Guardrails---Audit-Logging/tree/Multi-Agent-Orchestration)
 [![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-Control%20Plane-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
-[![LangGraph](https://img.shields.io/badge/LangGraph-Orchestrator-1C3C3C?style=flat-square)](https://langchain-ai.github.io/langgraph/)
-[![MCP](https://img.shields.io/badge/MCP-Multi%20Tool%20Sidecars-111111?style=flat-square)](https://modelcontextprotocol.io/)
+[![LangGraph](https://img.shields.io/badge/LangGraph-Supervisor%20Graph-1C3C3C?style=flat-square)](https://langchain-ai.github.io/langgraph/)
+[![MCP](https://img.shields.io/badge/MCP-Tool%20Sidecars-111111?style=flat-square)](https://modelcontextprotocol.io/)
 [![NeMo Guardrails](https://img.shields.io/badge/NeMo-Guardrails-76B900?style=flat-square)](https://github.com/NVIDIA/NeMo-Guardrails)
-[![Streamlit](https://img.shields.io/badge/Streamlit-Operator%20UI-FF4B4B?style=flat-square&logo=streamlit&logoColor=white)](https://streamlit.io/)
+[![Streamlit](https://img.shields.io/badge/Streamlit-AgentOps%20UI-FF4B4B?style=flat-square&logo=streamlit&logoColor=white)](https://streamlit.io/)
 [![OpenRouter](https://img.shields.io/badge/OpenRouter-Free%20Models-8A5CF6?style=flat-square)](https://openrouter.ai/)
 [![License MIT](https://img.shields.io/badge/License-MIT-2EA043?style=flat-square)](LICENSE)
 
-AgentForge is a production-structured agent platform where an LLM can plan work, call tools through MCP sidecars, pause risky actions for human approval, and leave behind a tamper-evident audit trail that can be verified after the fact.
+AgentForge v2 turns the original AgentForge control plane into a supervised multi-agent runtime. It keeps the v1 foundation of MCP tools, NeMo Guardrails, human approval, red-team evaluation, and tamper-evident audit logging, then adds specialist agents, self-healing retries, deterministic replay, governed skills, Security Officer review, proactive triggers, and AgentOps telemetry.
 
-This is not a toy chatbot repo. It is a full control plane for enterprise-style agent execution with:
+This branch is not a chatbot demo. It is a production-structured agent platform designed to answer the operational questions that matter when agents can touch real systems:
 
-- a FastAPI API for sessions, tasks, approvals, corpus operations, MCP introspection, audit verification, and red-team runs
-- a LangGraph orchestrator with persisted checkpoints and resumable execution
-- deterministic NeMo Guardrails plus PII redaction and tool allowlisting
-- four MCP tool servers for file search, web fetch, SQLite querying, and GitHub access
-- a Streamlit operator UI and a standalone CLI
-- red-team persistence and CI-backed safety gating
+- Which agent role handled each step?
+- Why did the supervisor hand work to a specialist?
+- Which skill policy constrained a tool call?
+- Was a risky plan reviewed before execution?
+- Can an interrupted task replay without duplicating completed work?
+- What did the run cost, and how confident was the final result?
+- Can the audit trail prove what happened after the fact?
 
 ---
 
 ## Table of Contents
 
 - [Short Abstract](#short-abstract)
-- [Deep Introduction](#deep-introduction)
+- [Branch Context](#branch-context)
 - [Platform Snapshot](#platform-snapshot)
-- [V2 At A Glance](#v2-at-a-glance)
-- [What Makes This Different](#what-makes-this-different)
+- [V2 Capability Map](#v2-capability-map)
 - [System Architecture](#system-architecture)
-- [Architecture Deep Dive](#architecture-deep-dive)
+- [Multi-Agent Runtime](#multi-agent-runtime)
 - [Request Lifecycle](#request-lifecycle)
 - [Safety and Control Model](#safety-and-control-model)
-- [MCP Tool Plane](#mcp-tool-plane)
+- [Skills Framework](#skills-framework)
+- [Replay and Self-Healing](#replay-and-self-healing)
+- [Triggers and Webhooks](#triggers-and-webhooks)
+- [AgentOps Observability](#agentops-observability)
 - [Persisted Data Model](#persisted-data-model)
 - [Public Interfaces](#public-interfaces)
 - [API Examples](#api-examples)
 - [Operator Surfaces](#operator-surfaces)
-- [UI Walkthrough](#ui-walkthrough)
 - [Evaluation and Verification](#evaluation-and-verification)
 - [Detailed Local Run Guide](#detailed-local-run-guide)
-- [V2 Quickstart](#v2-quickstart)
 - [Repository Layout](#repository-layout)
 - [Deployment Notes](#deployment-notes)
 - [Known Local Waivers](#known-local-waivers)
@@ -55,33 +57,22 @@ This is not a toy chatbot repo. It is a full control plane for enterprise-style 
 
 ## Short Abstract
 
-Most agent demos can answer a prompt. Far fewer can answer operational questions like:
+AgentForge v2 is an agent control plane for supervised multi-agent execution. A user task enters through FastAPI, passes deterministic guardrails, receives a supervisor plan, and is routed across specialist LangGraph subgraphs. Tool access is mediated through MCP sidecars and governed by versioned YAML skills. Risky plans and actions can be reviewed by a Security Officer agent or paused for human approval. The runtime records audit events, task steps, reviews, skill invocations, cost records, confidence scores, and replay metadata so operators can inspect what happened later.
 
-- What tool did the agent call?
-- Why was that tool allowed?
-- What exactly got blocked by safety policy?
-- Could a human intervene before the action executed?
-- Can we prove the audit trail was not tampered with?
-
-AgentForge is built around those questions.
-
-The platform accepts a user prompt through a FastAPI control plane, evaluates it with deterministic guardrails, plans execution with an LLM, routes tool calls through dedicated MCP sidecars, pauses risky actions for approval, and records key events into an append-only SHA-256 integrity chain. Operators can monitor and drive the system through HTTP APIs, a Streamlit UI, or a CLI. A persisted red-team runner continuously probes the safety layer and can act as a release gate in CI.
+The system is deliberately explicit. It exposes HTTP APIs, a Streamlit operator UI, a CLI, readiness checks, red-team suites, database migrations, and CI jobs. The result is closer to an agent operations platform than a prompt wrapper.
 
 ---
 
-## Deep Introduction
+## Branch Context
 
-The easiest way to understand this repository is to think of it as an agent runtime that has been split into explicit, inspectable subsystems instead of hidden inside one giant prompt loop.
+This README describes the `Multi-Agent-Orchestration` branch.
 
-In a lightweight demo, the model receives a prompt, decides what to do, maybe calls a tool, and returns an answer. That is often fine for exploration, but it becomes difficult to operate safely the moment the agent can reach real systems. You need to know which tools exist, what inputs they saw, whether risky actions were blocked, whether the agent paused for approval, and whether the logs can be trusted after an incident.
+| Branch | Purpose | Relationship to `main` |
+| --- | --- | --- |
+| `main` | v1 multi-tool agent platform | FastAPI, LangGraph single orchestrator, MCP sidecars, guardrails, approvals, audit chain, Streamlit UI, CLI, redteam |
+| `Multi-Agent-Orchestration` | v2 delta branch | Adds phases 11-18: supervisor graph, self-healing, replay, skills, Security Officer, triggers, AgentOps, and v2 release hardening |
 
-AgentForge treats those concerns as first-class product requirements.
-
-At runtime, the system creates a session, accepts a task, and runs deterministic input checks before orchestration begins. The orchestrator then asks the configured LLM to generate a plan. Each plan step is persisted. If a step is a tool call, the request is validated against a deny-by-default tool allowlist. Medium-risk and high-risk actions can trigger approval interrupts. Execution state is checkpointed so the task can resume after a human decision. Every major event is written into an append-only audit chain where each event hash depends on the previous event, making integrity verification possible later.
-
-The result is a system that is useful both for building agents and for governing them.
-
-This repository also deliberately separates local workstation constraints from release quality. The maintainer's Windows machine had Docker Desktop and Bitdefender interference during development, so the Docker verification path was explicitly waived locally. Host-side verification, GitHub Actions CI, and the persisted red-team workflow were used instead to bring the repository to a clean release state.
+The v2 branch preserves the v1 behavior where possible. The supervisor graph is additive, and the original orchestrator path remains available for compatibility-oriented flows and regression coverage.
 
 ---
 
@@ -89,65 +80,31 @@ This repository also deliberately separates local workstation constraints from r
 
 | Area | What is included | Why it matters |
 | --- | --- | --- |
-| Control plane | FastAPI API, typed schemas, health/readiness endpoints, API-key auth | Gives the system an explicit and automatable boundary instead of a hidden prompt loop |
-| Orchestration | LangGraph planner/executor, persisted checkpoints, resumable task graph | Makes long-running and approval-paused work recoverable |
-| Tooling | Four MCP sidecars: `file_search`, `web_fetch`, `sqlite_query`, `github` | Keeps tool execution isolated, inspectable, and extensible |
-| Safety | NeMo Guardrails, prompt-injection checks, PII redaction, tool allowlist, risk classification | Turns safety behavior into deterministic policy instead of vague prompting |
-| Governance | Append-only audit chain, approval decisions, integrity verification endpoints | Supports compliance, investigation, and post-run trust |
-| Operator UX | Streamlit console, CLI client, HTTP-first API | Makes the platform usable by operators as well as developers |
-| Evaluation | Persisted redteam runs, CI-backed gating, scenario scoring | Prevents safety drift from being invisible between releases |
+| Control plane | FastAPI API, typed schemas, API-key auth, health/readiness endpoints | Gives the platform an explicit boundary that can be tested, automated, and operated |
+| Multi-agent runtime | LangGraph supervisor graph with six roles and specialist subgraphs | Routes work to purpose-built agents instead of relying on one overloaded persona |
+| Tool plane | Four MCP sidecars: `file_search`, `web_fetch`, `sqlite_query`, `github` | Keeps tool execution isolated, inspectable, and readiness-aware |
+| Skills | Versioned YAML skills with a closed five-key policy schema | Makes specialist behavior packageable, reviewable, reloadable, and constrained by policy |
+| Safety | NeMo Guardrails, prompt-injection checks, PII redaction, tool allowlist, Security Officer review | Turns agent safety into deterministic and auditable control points |
+| Recovery | Self-healing retry decisions and replay with idempotency keys | Lets transient failures recover without duplicating completed work |
+| Governance | Human approvals, review records, append-only SHA-256 audit chain | Supports investigation, compliance, and accountable operations |
+| Proactivity | Webhook and scheduled triggers plus a trigger worker on port `8105` | Allows work to start from external events as well as manual prompts |
+| AgentOps | Cost records, confidence scores, handoff analytics, Streamlit dashboard | Gives operators live visibility into cost, quality, and routing behavior |
+| Evaluation | v1 and v2 red-team suites with CI safety gates | Keeps safety measurable as capability increases |
 
 ---
 
-## V2 At A Glance
+## V2 Capability Map
 
-The `Multi-Agent-Orchestration` branch upgrades AgentForge from a single-orchestrator runtime into a supervised multi-agent system with durable recovery and operator telemetry.
-
-| v2 addition | What changed | Why it matters |
-| --- | --- | --- |
-| Supervisor graph | Six roles: `orchestrator`, `analyst`, `researcher`, `engineer`, `secretary`, `security_officer` | Tasks can be decomposed and routed intentionally instead of forcing one agent persona to do everything |
-| Self-healing | Deterministic reflect-and-retry flow with bounded escalation | Transient tool or model failures do not automatically become dead tasks |
-| Replay | Idempotent task replay with cached-step skipping | Crashed or interrupted runs can be resumed without blindly re-executing side effects |
-| Skills | YAML skill registry with a closed 5-key policy schema | Tool usage is packaged, reviewable, reloadable, and policy-bound |
-| Security Officer | Second-line review agent for risky plans, tool calls, and long outputs | High-risk work is reviewed by a specialist layer on top of base guardrails |
-| Triggers | Webhook and schedule driven task creation plus `trigger_worker` | The platform can proactively create work from external events instead of waiting for manual task submission |
-| AgentOps | Cost tracking, confidence scoring, handoff analytics, Streamlit dashboard | Operators can see whether the multi-agent runtime is reliable, cheap, and trustworthy |
-| v2 safety gate | Separate v2 redteam suite with 20 multi-agent scenarios | Release confidence stays measurable even as the system gets more capable |
-
----
-
-## What Makes This Different
-
-### 1. It is an agent control plane, not just a prompt wrapper
-
-The API exposes 25 route handlers across health, sessions, tasks, approvals, audit, corpus, MCP introspection, and red-team operations. The system persists sessions, tasks, steps, tool calls, LLM calls, approval decisions, audit events, corpus documents, and red-team results.
-
-### 2. Tooling is isolated behind MCP sidecars
-
-Instead of wiring tool logic directly into the main API process, AgentForge pushes tools into four dedicated MCP servers:
-
-- `file_search`
-- `web_fetch`
-- `sqlite_query`
-- `github`
-
-That makes the tool surface explicit and introspectable and keeps the control plane cleaner.
-
-### 3. Guardrails are deterministic and auditable
-
-The safety layer is not just "hope the model behaves." It combines prompt-injection screening, PII redaction, tool allowlisting, risk classification, approval gates, and audit events so blocked behavior is visible and testable.
-
-### 4. Approval is built into the execution graph
-
-Approval is not bolted on afterward. The LangGraph runtime persists state and can interrupt execution, wait for a reviewer decision, and resume the same task deterministically from a checkpoint.
-
-### 5. Red-teaming is part of the product
-
-The repository includes a persisted red-team runner, 50 adversarial scenarios, JUnit reporting, and a GitHub Actions workflow that can enforce a safety threshold.
-
-### 6. Operator UX is included
-
-This repo ships both a Streamlit operator UI and a CLI. It is designed to be used, not only imported.
+| Phase | Capability | Status | Main artifact areas |
+| --- | --- | --- | --- |
+| 11 | Agent roster and supervisor graph | Complete | `apps/api/src/agentforge/agents/`, `agent_runs`, agent routes |
+| 12 | Self-healing and introspection | Complete | retry/reflection steps, retry audit events, `agent_retry` SSE |
+| 13 | Durable checkpointing and replay | Complete | replay API, idempotency keys, replay CLI |
+| 14 | Skills framework | Complete | `skills`, `skill_invocations`, YAML skills, policy enforcement |
+| 15 | Agentic peer review | Complete | Security Officer review, `review_records`, review routes |
+| 16 | Proactive triggers and webhooks | Complete | `triggers`, `trigger_events`, `apps/trigger_worker` |
+| 17 | AgentOps dashboard, confidence, and cost | Complete | `cost_records`, `confidence_scores`, observability routes, AgentOps UI |
+| 18 | v2 hardening and release | Complete | v2 docs, workflows, red-team suites, compose/env updates |
 
 ---
 
@@ -159,158 +116,130 @@ flowchart LR
     UI[Streamlit UI]
     CLI[CLI]
     API[FastAPI Control Plane]
-    Auth[API Key Auth]
-    Guardrails[Guardrails Runner]
-    Orchestrator[LangGraph Orchestrator]
-    Approvals[Approval Service]
-    Audit[Audit Service]
-    EventBus[Task Event Bus]
+    Guardrails[NeMo Guardrails + Deterministic Safety]
+    Supervisor[LangGraph Supervisor Graph]
+    Analyst[Analyst Agent]
+    Researcher[Researcher Agent]
+    Engineer[Engineer Agent]
+    Secretary[Secretary Agent]
+    Security[Security Officer]
+    Skills[Skills Registry + Policy DSL]
     MCPPool[MCP Client Pool]
     FS[file_search MCP]
     WF[web_fetch MCP]
     SQ[sqlite_query MCP]
     GH[github MCP]
+    Review[Review Service]
+    Approvals[Approval Service]
+    Audit[Audit Chain]
+    Events[SSE Event Bus]
+    Obs[AgentOps Services]
+    TriggerWorker[Trigger Worker :8105]
     DB[(PostgreSQL or SQLite)]
     Checkpoints[(Checkpoint SQLite)]
-    Corpus[(Corpus Documents)]
-    Redteam[Red-Team Runner]
+    Corpus[(Corpus + Synthetic Fixtures)]
 
     User --> UI
     User --> CLI
     UI --> API
     CLI --> API
-    API --> Auth
+    TriggerWorker --> API
     API --> Guardrails
-    API --> Orchestrator
+    API --> Supervisor
     API --> Approvals
     API --> Audit
-    API --> EventBus
-    API --> MCPPool
+    API --> Obs
+    API --> Events
     API --> DB
-    Orchestrator --> Checkpoints
-    Orchestrator --> MCPPool
+    API --> Corpus
+    Supervisor --> Analyst
+    Supervisor --> Researcher
+    Supervisor --> Engineer
+    Supervisor --> Secretary
+    Supervisor --> Security
+    Supervisor --> Skills
+    Supervisor --> Review
+    Supervisor --> Checkpoints
+    Skills --> MCPPool
     MCPPool --> FS
     MCPPool --> WF
     MCPPool --> SQ
     MCPPool --> GH
-    API --> Corpus
-    Redteam --> API
+    Review --> Approvals
+    Obs --> DB
 ```
 
-### Major runtime pieces
+### Runtime components
 
 | Component | Role |
 | --- | --- |
-| `apps/api` | Main control plane. Hosts the HTTP API, orchestrator wiring, guardrails integration, approvals, audit, corpus operations, and red-team services. |
-| `apps/mcp_servers/file_search` | Search and document-read tools over the local markdown corpus. |
-| `apps/mcp_servers/web_fetch` | Controlled web retrieval tool surface. |
-| `apps/mcp_servers/sqlite_query` | Read-only query server for the synthetic SQLite fixture database. |
-| `apps/mcp_servers/github` | Read-only GitHub tool server backed by a scoped token. |
-| `apps/ui` | Streamlit-based operator interface. |
-| `apps/cli` | Command-line operator client. |
+| `apps/api` | Main control plane for sessions, tasks, agents, skills, approvals, reviews, replay, triggers, audit, observability, and red-team runs |
+| `apps/api/src/agentforge/agents` | Supervisor graph, specialist definitions, routing logic, role capabilities, and multi-agent execution helpers |
+| `apps/mcp_servers/file_search` | MCP sidecar for local markdown corpus search and document reads |
+| `apps/mcp_servers/web_fetch` | MCP sidecar for controlled web retrieval |
+| `apps/mcp_servers/sqlite_query` | MCP sidecar for read-only queries against the synthetic SQLite fixture |
+| `apps/mcp_servers/github` | MCP sidecar for scoped GitHub lookups |
+| `apps/trigger_worker` | APScheduler-backed worker service that fires enabled triggers into the API |
+| `apps/ui` | Streamlit operator UI, including the v2 AgentOps dashboard |
+| `apps/cli` | Command-line operator client for sessions, tasks, approvals, audit, redteam, and replay |
 
 ---
 
-## Architecture Deep Dive
+## Multi-Agent Runtime
 
-### Control-plane execution map
+The v2 runtime introduces a supervisor graph with six explicit roles.
 
-```mermaid
-flowchart TB
-    subgraph Intake[Task Intake]
-        S[Session API]
-        T[Task API]
-        H[Health + Readiness]
-    end
+| Agent role | Primary purpose | Typical capabilities |
+| --- | --- | --- |
+| `orchestrator` | Owns task decomposition, routing, and final synthesis | Builds the supervisor plan and coordinates specialist handoffs |
+| `analyst` | Turns data and tool results into structured analysis | Summarization, comparison, scoring, reasoning over retrieved context |
+| `researcher` | Finds and reads information | Corpus search, controlled web fetch, source-oriented synthesis |
+| `engineer` | Handles technical and repository-oriented work | SQLite inspection, GitHub context lookup, implementation-oriented planning |
+| `secretary` | Produces concise operator-facing summaries and handoff notes | Final response drafting, status summaries, operational notes |
+| `security_officer` | Reviews risky plans, tool calls, and flagged outputs | Approve/reject review verdicts, rationale, escalation to human approvals |
 
-    subgraph Runtime[Execution Runtime]
-        G[Guardrails Runner]
-        O[Agent Orchestrator]
-        B[Task Event Bus]
-        A[Approval Service]
-        U[Audit Service]
-    end
-
-    subgraph Persistence[Persistence]
-        DB[(Main Database)]
-        CP[(Checkpoint Store)]
-    end
-
-    subgraph Tooling[MCP Tool Plane]
-        MP[MCP Client Pool]
-        F[file_search]
-        W[web_fetch]
-        Q[sqlite_query]
-        GH[github]
-    end
-
-    T --> G
-    G --> O
-    O --> MP
-    O --> A
-    O --> U
-    O --> B
-    O --> CP
-    S --> DB
-    T --> DB
-    A --> DB
-    U --> DB
-    MP --> F
-    MP --> W
-    MP --> Q
-    MP --> GH
-    H --> MP
-    H --> DB
-```
-
-### Approval-resume sequence
+### Supervisor handoff flow
 
 ```mermaid
 sequenceDiagram
-    participant User
+    participant Client
     participant API
-    participant Guardrails
-    participant Orchestrator
-    participant Approval
+    participant Supervisor
+    participant Analyst
+    participant Researcher
+    participant Engineer
+    participant Security
+    participant Skills
     participant MCP
-    participant Audit
+    participant Events
 
-    User->>API: POST /sessions/{id}/tasks
-    API->>Guardrails: validate prompt
-    Guardrails-->>API: allowed / blocked
-    API->>Orchestrator: start task
-    Orchestrator->>Audit: task.planned
-    Orchestrator->>MCP: execute step
-    Orchestrator->>Approval: interrupt when approval is required
-    Approval-->>Orchestrator: await decision
-    User->>API: POST /approvals/{id}/decision
-    API->>Approval: persist decision
-    Approval-->>Orchestrator: resume signal
-    Orchestrator->>MCP: continue execution
-    Orchestrator->>Audit: task.completed
-    API-->>User: final response / SSE stream
+    Client->>API: POST /api/v1/sessions/{id}/tasks
+    API->>Supervisor: start multi-agent run
+    Supervisor->>Events: agent_handoff(orchestrator -> researcher)
+    Supervisor->>Researcher: gather context
+    Researcher->>Skills: invoke governed skill
+    Skills->>MCP: execute allowed MCP tool
+    Supervisor->>Events: agent_handoff(researcher -> analyst)
+    Supervisor->>Analyst: analyze retrieved evidence
+    Supervisor->>Engineer: inspect technical context when needed
+    Supervisor->>Security: review risky plan or output
+    Security-->>Supervisor: review_verdict
+    Supervisor->>Events: task_completed
 ```
 
-### Data relationships at a glance
+### Event stream additions
 
-```mermaid
-erDiagram
-    SESSION ||--o{ TASK : contains
-    TASK ||--o{ TASK_STEP : records
-    TASK ||--o{ TOOL_CALL : invokes
-    TASK ||--o{ LLM_CALL : emits
-    TASK ||--o{ APPROVAL : requests
-    SESSION ||--o{ AUDIT_EVENT : logs
-    TASK ||--o{ AUDIT_EVENT : logs
-    REDTEAM_RUN ||--o{ REDTEAM_RESULT : contains
-```
+The task SSE stream now includes v2 events alongside the v1 events:
 
-These diagrams correspond directly to the actual module split in `apps/api/src/agentforge/`:
-
-- `routers/` defines the HTTP boundary
-- `services/` implements orchestration, approvals, audit, redteam, provider integration, and MCP pooling
-- `models/` persists the session, task, tool, approval, audit, and redteam lifecycle
-- `guardrails/` enforces deterministic safety policy around prompts, outputs, and tools
+| Event | Meaning |
+| --- | --- |
+| `agent_handoff` | Supervisor moved work from one agent role to another |
+| `agent_retry` | A bounded self-healing retry was recorded |
+| `review_verdict` | Security Officer produced a review decision |
+| `skill_invoked` | A governed skill invocation was executed or evaluated |
+| `cost_update` | Token/cost accounting changed for the task |
+| `confidence_update` | Confidence scoring changed for the task |
+| `task_replayed` | Replay skipped or recovered a completed step |
 
 ---
 
@@ -321,124 +250,229 @@ flowchart TD
     A[Create Session] --> B[Submit Task]
     B --> C[Input Guardrails]
     C -->|blocked| D[Reject + Audit]
-    C -->|allowed| E[LLM Plan Generation]
-    E --> F[Persist Plan + Steps]
-    F --> G[Execute Step]
-    G -->|tool call| H[Tool Allowlist + Risk Check]
-    H -->|blocked| I[Skip/Reject + Audit]
-    H -->|approval required| J[Pause for Approval]
-    J --> K[Resume from Checkpoint]
-    H -->|allowed| L[MCP Tool Execution]
-    L --> M[Persist Tool/LLM Call]
-    M --> N[Publish SSE Event]
-    N --> O{More Steps?}
-    O -->|yes| G
-    O -->|no| P[Final Response]
-    P --> Q[Output Redaction]
-    Q --> R[Complete Task + Audit]
+    C -->|allowed| E[Supervisor Plan]
+    E --> F[Security Officer Plan Review When Required]
+    F --> G[Persist AgentRun + TaskSteps]
+    G --> H[Handoff To Specialist]
+    H --> I[Skill Policy Check]
+    I -->|blocked| J[Reject + Review/Audit]
+    I -->|approval required| K[Human Approval]
+    I -->|allowed| L[MCP Tool Execution]
+    L -->|transient failure| M[Self-Healing Reflection + Retry]
+    M --> H
+    L --> N[Persist Tool, Skill, LLM, Cost]
+    N --> O[Confidence Scoring]
+    O -->|below threshold| P[LOW Approval Gate]
+    O -->|acceptable| Q[Security Officer Output Review When Required]
+    Q --> R[Secretary Final Response]
+    R --> S[Output Redaction]
+    S --> T[Audit + Task Complete]
 ```
 
-### What happens in practice
+### Practical flow
 
-1. A client creates a session.
-2. A user prompt is submitted as a task.
-3. Input guardrails evaluate the request before orchestration.
-4. The LLM generates a structured plan.
-5. Each step is executed in sequence.
-6. Tool calls are validated against the allowlist and risk rules.
-7. If approval is required, the graph interrupts and waits.
-8. Execution resumes after approval using a persisted checkpoint.
-9. Final output is redacted if needed.
-10. The task is completed and the audit chain is extended.
+1. A user creates or reuses a session.
+2. A task is submitted through the API, UI, CLI, or a trigger.
+3. Guardrails evaluate the prompt before orchestration.
+4. The supervisor decomposes the task and chooses specialist roles.
+5. Specialists invoke governed skills rather than raw tool access.
+6. Tool calls pass through MCP sidecars after policy and risk checks.
+7. Self-healing retries recover eligible transient failures.
+8. Security Officer review gates risky plans, tool calls, and flagged outputs.
+9. Cost and confidence are recorded.
+10. Low-confidence work can create a human approval gate.
+11. Final output is redacted, audited, and returned.
 
 ---
 
 ## Safety and Control Model
 
-AgentForge's safety model is layered rather than singular.
+AgentForge v2 uses layered controls rather than one broad safety prompt.
 
-### Input safety
+| Layer | Control | Persistence / visibility |
+| --- | --- | --- |
+| Input | Guardrails, prompt-injection screening, blocked-request classification | audit events |
+| Planning | Supervisor plan review for risky work | review records, SSE `review_verdict` |
+| Agent scope | Role capabilities and specialist boundaries | agent run records and task steps |
+| Skill policy | Closed five-key YAML policy schema | skill and skill invocation records |
+| Tool execution | MCP allowlist, risk classifier, approval interrupts | tool calls, approvals, audit events |
+| Output | PII redaction and flagged long-form review | review records and final response |
+| Confidence | `0.6 * heuristic + 0.4 * self_reported` gate | confidence scores and LOW approvals |
+| Audit | Append-only SHA-256 event chain | audit integrity endpoint |
 
-- prompt-injection screening
-- disallowed request detection
-- deterministic rejection path with audit records
-
-### Tool safety
-
-- deny-by-default allowlist
-- server and tool pair validation
-- risk classification before execution
-- approval gate for risky actions
-
-### Output safety
-
-- Presidio-based PII redaction
-- structured entity replacements
-- output returned only after redaction pass
-
-### Human control
-
-- `awaiting_approval` task state
-- persisted approval records
-- resumable execution through LangGraph checkpoints
-
-### Audit integrity
-
-- append-only event model
-- SHA-256 hash chain
-- integrity verification endpoint
-- tamper detection tested in the suite
+The Security Officer is intentionally additive. It does not replace deterministic guardrails or human approval. It adds a second-line review path for plans, medium/high-risk tool calls, and outputs that need more scrutiny.
 
 ---
 
-## MCP Tool Plane
+## Skills Framework
 
-The MCP layer is one of the core architectural decisions in this project.
+Skills are the v2 bridge between agent intent and governed execution.
 
-### Why MCP is used here
+Each skill is a versioned YAML file with top-level role, tool, and knowledge declarations plus a closed policy schema. The policy surface is intentionally small so it remains reviewable and enforceable:
 
-MCP makes the tool surface explicit. The API can ask:
+| Policy key | Purpose |
+| --- | --- |
+| `max_results_per_call` | Truncates oversized list-style tool results |
+| `forbid_fields` | Removes fields that a skill must not expose |
+| `require_approval_if` | Declares conditions that require human approval before execution |
+| `topic_scope` | Keeps a skill scoped to approved subject areas |
+| `rate_limit` | Applies per-skill execution pacing |
 
-- which tool servers are reachable?
-- which tools does each server expose?
-- are all sidecars healthy?
+Shipped skills cover the core operational patterns:
 
-This becomes part of readiness and operations instead of hidden application code.
+| Skill | Typical purpose |
+| --- | --- |
+| `corporate_research` | Research company, market, and corpus evidence through controlled file and web tools |
+| `customer_support` | Draft customer-safe summaries and responses with consistent tone and escalation discipline |
+| `repo_health` | Inspect repository health signals and open engineering work through GitHub tools |
+| `workforce_analytics` | Answer workforce, project, and assignment questions from the synthetic corporate database |
 
-### Included MCP servers
+Skill APIs:
 
-| MCP Server | Purpose | Typical Use |
+- `GET /api/v1/skills`
+- `GET /api/v1/skills/{skill_id}`
+- `POST /api/v1/skills/reload`
+
+---
+
+## Replay and Self-Healing
+
+### Self-healing
+
+The self-healing layer records retry behavior as first-class task history. Eligible transient failures create reflection and retry task steps, publish an `agent_retry` SSE event, and either recover within bounds or escalate cleanly.
+
+Self-healing is deterministic:
+
+- transient errors can retry
+- guardrail blocks do not retry
+- validation failures escalate
+- unknown exceptions fail safe
+- retry attempts are bounded and linked to parent steps
+
+### Replay
+
+Replay is built for durable recovery, not duplicate execution. It derives deterministic idempotency keys for task steps and consults completed-step records before doing work again.
+
+Replay behavior:
+
+- completed read-only steps are skipped
+- already-completed tasks are rejected as replay conflicts
+- non-idempotent work is escalated rather than blindly repeated
+- replay emits `task_replayed` stream events
+- the CLI exposes `agentforge task-replay <task_id>`
+
+Replay API:
+
+- `POST /api/v1/tasks/{task_id}/replay`
+
+---
+
+## Triggers and Webhooks
+
+The trigger system lets AgentForge create tasks from external events.
+
+| Trigger feature | Description |
+| --- | --- |
+| Trigger CRUD | Create, list, inspect, update, and disable triggers |
+| Webhook ingestion | Accept GitHub and generic webhook payloads |
+| HMAC validation | Validate GitHub and generic signatures before accepting events |
+| Internal fire endpoint | Lets the trigger worker fire scheduled triggers safely |
+| Template rendering | Turns trigger payload data into task prompts |
+| Trigger worker | APScheduler service on port `8105` |
+
+Trigger APIs:
+
+- `POST /api/v1/triggers`
+- `GET /api/v1/triggers`
+- `GET /api/v1/triggers/{trigger_id}`
+- `PATCH /api/v1/triggers/{trigger_id}`
+- `DELETE /api/v1/triggers/{trigger_id}`
+- `GET /api/v1/triggers/{trigger_id}/events`
+- `POST /api/v1/triggers/webhook/{source}`
+- `POST /api/v1/triggers/internal/fire`
+
+---
+
+## AgentOps Observability
+
+AgentOps turns the multi-agent runtime into something operators can inspect.
+
+| Signal | How it is recorded | Where it is surfaced |
 | --- | --- | --- |
-| `file_search` | Searches and reads the local markdown corpus | Find documents about a concept, then retrieve exact passages |
-| `web_fetch` | Fetches web content through a controlled interface | Pull external reference content when allowed |
-| `sqlite_query` | Runs read-only SQL against the synthetic fixture database | Structured retrieval over tabular data |
-| `github` | Uses a scoped token for GitHub lookups | Read repository metadata or inspect GitHub context |
+| Cost | `cost_records` | observability APIs and Streamlit AgentOps page |
+| Confidence | `confidence_scores` | confidence API, task response, confidence gauge |
+| Handoffs | `agent_runs` parent/child relationships | handoff API and sankey chart |
+| Low confidence | automatic LOW approval | approvals API and operator UI |
 
-### API introspection endpoints
+Confidence uses the blueprint formula exactly:
 
-- `GET /api/v1/mcp/servers`
-- `GET /api/v1/mcp/servers/{server_name}/tools`
+```text
+confidence = 0.6 * heuristic + 0.4 * self_reported
+```
+
+OpenRouter free-model accounting is represented in the price table as `openrouter/free` with zero USD cost so the default free path is tracked honestly instead of being omitted.
+
+Observability APIs:
+
+- `GET /api/v1/observability/tasks/{task_id}/cost`
+- `GET /api/v1/observability/tasks/{task_id}/confidence`
+- `GET /api/v1/observability/summary`
+- `GET /api/v1/observability/agent_handoffs`
 
 ---
 
 ## Persisted Data Model
 
-The repository defines 10 main persisted model modules in the API service.
+The v2 branch expands the v1 data model with multi-agent, skills, review, trigger, and observability records.
+
+```mermaid
+erDiagram
+    SESSION ||--o{ TASK : contains
+    TASK ||--o{ TASK_STEP : records
+    TASK ||--o{ AGENT_RUN : routes
+    AGENT_RUN ||--o{ TASK_STEP : owns
+    TASK ||--o{ TOOL_CALL : invokes
+    TASK ||--o{ LLM_CALL : emits
+    TASK ||--o{ APPROVAL : requests
+    TASK ||--o{ REVIEW_RECORD : reviews
+    TASK ||--o{ COST_RECORD : costs
+    TASK ||--o{ CONFIDENCE_SCORE : scores
+    SKILL ||--o{ SKILL_INVOCATION : executes
+    TRIGGER ||--o{ TRIGGER_EVENT : fires
+    TRIGGER_EVENT ||--o{ TASK : creates
+    SESSION ||--o{ AUDIT_EVENT : logs
+    TASK ||--o{ AUDIT_EVENT : logs
+    REDTEAM_RUN ||--o{ REDTEAM_RESULT : contains
+```
 
 | Model | Purpose |
 | --- | --- |
-| `Session` | Top-level conversation/execution container |
-| `Task` | Individual user request lifecycle |
-| `TaskStep` | Persisted step-by-step execution trail |
-| `ToolCall` | Recorded tool call inputs and outputs |
-| `LLMCall` | Recorded model invocations and token usage metadata |
-| `Approval` | Human decision records for risky actions |
+| `Session` | Top-level conversation or execution container |
+| `Task` | Individual user, trigger, or replayed work item |
+| `TaskStep` | Step-by-step execution trail, including v2 role/attempt/replay metadata |
+| `AgentRun` | Specialist run record with role, status, parent linkage, and capabilities context |
+| `ToolCall` | MCP tool call inputs, outputs, and status |
+| `LLMCall` | Model invocation metadata and token usage |
+| `Skill` | Versioned YAML skill definition loaded into the registry |
+| `SkillInvocation` | Skill execution record tied to task, agent, policy, and tool usage |
+| `ReviewRecord` | Security Officer review verdicts and rationale |
+| `Approval` | Human approval requests and decisions |
+| `Trigger` | Webhook or scheduled trigger definition |
+| `TriggerEvent` | Accepted, rejected, or fired trigger payload |
+| `CostRecord` | Per-task LLM cost accounting |
+| `ConfidenceScore` | Heuristic and self-reported confidence with merged score |
 | `AuditEvent` | Append-only audit chain event |
 | `CorpusDocument` | Ingested markdown corpus metadata |
-| `RedteamRun` | A persisted red-team execution |
-| `RedteamResult` | Per-scenario outcome and diagnostics |
+| `RedteamRun` | Persisted safety evaluation run |
+| `RedteamResult` | Per-scenario red-team result |
 
-This model split is what makes the platform explainable after execution. You can inspect what happened without reverse-engineering a prompt transcript.
+Migration ownership:
+
+- `007_multi_agent.py`
+- `008_skills.py`
+- `009_reviews.py`
+- `010_triggers.py`
+- `011_observability.py`
 
 ---
 
@@ -448,200 +482,149 @@ This model split is what makes the platform explainable after execution. You can
 
 | Domain | Primary endpoints | Typical operator outcome |
 | --- | --- | --- |
-| Health | `GET /api/v1/health/liveness`, `GET /api/v1/health/readiness` | Confirms the API, database, and MCP dependencies are up |
-| Sessions | `POST /api/v1/sessions`, `GET /api/v1/sessions`, `GET /api/v1/sessions/{session_id}` | Creates and inspects agent work containers |
-| Tasks | `POST /api/v1/sessions/{session_id}/tasks`, `GET /api/v1/tasks/{task_id}`, `GET /api/v1/tasks/{task_id}/stream`, `POST /api/v1/tasks/{task_id}/resume` | Starts agent work, watches streaming progress, resumes paused runs |
-| Approvals | `GET /api/v1/approvals`, `GET /api/v1/approvals/{approval_id}`, `POST /api/v1/approvals/{approval_id}/decision` | Reviews and resolves risky actions |
-| Audit | `GET /api/v1/audit/events`, `GET /api/v1/audit/sessions/{session_id}/events`, `GET /api/v1/audit/integrity` | Investigates behavior and verifies tamper-evidence |
-| Corpus | `POST /api/v1/corpus/reindex`, `GET /api/v1/corpus/documents` | Refreshes and inspects the searchable knowledge base |
-| MCP | `GET /api/v1/mcp/servers`, `GET /api/v1/mcp/servers/{server_name}/tools` | Confirms tool-server health and exposed tool metadata |
-| Redteam | `POST /api/v1/redteam/run`, `GET /api/v1/redteam/runs`, `GET /api/v1/redteam/runs/{run_id}`, `GET /api/v1/redteam/runs/{run_id}/results` | Evaluates safety posture and release readiness |
+| Health | `GET /api/v1/health/liveness`, `GET /api/v1/health/readiness` | Confirm API, DB, MCP sidecars, and worker readiness |
+| Agents | `GET /api/v1/agents`, `GET /api/v1/agents/{role}/capabilities` | Inspect roster and role-scoped capabilities |
+| Sessions | `POST /api/v1/sessions`, `GET /api/v1/sessions`, `GET /api/v1/sessions/{session_id}` | Create and inspect agent work containers |
+| Tasks | `POST /api/v1/sessions/{session_id}/tasks`, `GET /api/v1/tasks/{task_id}`, `GET /api/v1/tasks/{task_id}/stream`, `POST /api/v1/tasks/{task_id}/resume`, `POST /api/v1/tasks/{task_id}/replay` | Start, watch, resume, and replay work |
+| Task detail | `GET /api/v1/tasks/{task_id}/steps`, `GET /api/v1/tasks/{task_id}/agents`, `GET /api/v1/tasks/{task_id}/reviews` | Inspect execution, handoffs, and review history |
+| Skills | `GET /api/v1/skills`, `GET /api/v1/skills/{skill_id}`, `POST /api/v1/skills/reload` | Inspect and reload governed skill definitions |
+| Approvals | `GET /api/v1/approvals`, `GET /api/v1/approvals/{approval_id}`, `POST /api/v1/approvals/{approval_id}/decision` | Resolve risky or low-confidence work |
+| Triggers | CRUD, webhook ingestion, internal fire, event listing | Create proactive task-starting workflows |
+| Observability | cost, confidence, summary, handoff endpoints | Monitor cost, confidence, and multi-agent routing |
+| Audit | events and integrity endpoints | Investigate behavior and verify tamper-evidence |
+| MCP | server and tool metadata endpoints | Confirm tool plane readiness |
+| Redteam | run/list/result endpoints | Evaluate v1 and v2 safety posture |
 
-### Health and readiness
+### Changed task response fields
 
-- `GET /api/v1/health/liveness`
-- `GET /api/v1/health/readiness`
+v2 task responses include additional operational context when available:
 
-### Session APIs
-
-- `POST /api/v1/sessions`
-- `GET /api/v1/sessions`
-- `GET /api/v1/sessions/{session_id}`
-- `POST /api/v1/sessions/{session_id}/end`
-
-### Task APIs
-
-- `POST /api/v1/sessions/{session_id}/tasks`
-- `GET /api/v1/tasks/{task_id}`
-- `GET /api/v1/tasks/{task_id}/steps`
-- `GET /api/v1/tasks/{task_id}/stream`
-- `POST /api/v1/tasks/{task_id}/resume`
-
-### Approval APIs
-
-- `GET /api/v1/approvals`
-- `GET /api/v1/approvals/{approval_id}`
-- `POST /api/v1/approvals/{approval_id}/decision`
-
-### Audit APIs
-
-- `GET /api/v1/audit/events`
-- `GET /api/v1/audit/sessions/{session_id}/events`
-- `GET /api/v1/audit/integrity`
-
-### Corpus APIs
-
-- `POST /api/v1/corpus/reindex`
-- `GET /api/v1/corpus/documents`
-
-### MCP APIs
-
-- `GET /api/v1/mcp/servers`
-- `GET /api/v1/mcp/servers/{server_name}/tools`
-
-### Red-team APIs
-
-- `POST /api/v1/redteam/run`
-- `GET /api/v1/redteam/runs`
-- `GET /api/v1/redteam/runs/{run_id}`
-- `GET /api/v1/redteam/runs/{run_id}/results`
+- `trigger_event_id`
+- `supervisor_plan`
+- `agent_runs`
+- `reviews`
+- `cost`
+- `confidence`
 
 ---
 
 ## API Examples
 
-The examples below are representative of the actual schema objects defined in `apps/api/src/agentforge/schemas/`.
+The examples below are representative of the actual schema objects defined under `apps/api/src/agentforge/schemas/`.
 
-### 1. Create a session
+### 1. Inspect the agent roster
 
 ```bash
-curl -X POST http://localhost:8015/api/v1/sessions \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: dev-key" \
-  -d '{"metadata":{"source":"readme-example"}}'
+curl http://localhost:8015/api/v1/agents \
+  -H "X-API-Key: dev-key"
 ```
 
 ```json
 {
-  "id": "7c1b9d8c-3b32-4d2d-8d84-a5d70228f0fb",
-  "user_id": "system",
-  "status": "active",
-  "started_at": "2026-04-20T16:00:00Z",
-  "ended_at": null,
-  "metadata": {
-    "source": "readme-example"
-  },
-  "task_count": 0,
-  "tool_call_count": 0,
-  "approval_count": 0
+  "agents": [
+    {"role": "orchestrator", "display_name": "Orchestrator", "enabled": true},
+    {"role": "analyst", "display_name": "Analyst", "enabled": true},
+    {"role": "researcher", "display_name": "Researcher", "enabled": true},
+    {"role": "engineer", "display_name": "Engineer", "enabled": true},
+    {"role": "secretary", "display_name": "Secretary", "enabled": true},
+    {"role": "security_officer", "display_name": "Security Officer", "enabled": true}
+  ]
 }
 ```
 
-### 2. Submit a task
+### 2. Submit a supervised task
 
 ```bash
 curl -X POST http://localhost:8015/api/v1/sessions/7c1b9d8c-3b32-4d2d-8d84-a5d70228f0fb/tasks \
   -H "Content-Type: application/json" \
   -H "X-API-Key: dev-key" \
-  -d '{"user_prompt":"Find transformer content and summarize it."}'
+  -d '{
+    "user_prompt": "Research the corpus, inspect relevant repository context, and produce a concise implementation plan.",
+    "supervisor_plan": true
+  }'
 ```
 
 ```json
 {
   "id": "4bf22d77-3815-4e7f-9af2-763ec0286b75",
   "session_id": "7c1b9d8c-3b32-4d2d-8d84-a5d70228f0fb",
-  "user_prompt": "Find transformer content and summarize it.",
-  "plan": null,
   "status": "queued",
-  "started_at": null,
-  "completed_at": null,
-  "final_response": null,
-  "error": null,
-  "checkpoint_id": null
+  "trigger_event_id": null,
+  "supervisor_plan": true,
+  "cost": null,
+  "confidence": null
 }
 ```
 
-### 3. Inspect MCP server state
-
-```bash
-curl http://localhost:8015/api/v1/mcp/servers \
-  -H "X-API-Key: dev-key"
-```
-
-```json
-[
-  {
-    "name": "file_search",
-    "url": "http://localhost:8101/mcp",
-    "status": "ok",
-    "tool_count": 2,
-    "server_label": "file-search-mcp"
-  },
-  {
-    "name": "github",
-    "url": "http://localhost:8104/mcp",
-    "status": "ok",
-    "tool_count": 2,
-    "server_label": "github-mcp"
-  }
-]
-```
-
-### 4. Approve a risky action
-
-```bash
-curl -X POST http://localhost:8015/api/v1/approvals/9d24fc4e-6a97-49e0-84d5-3d0c2f426c50/decision \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: dev-key" \
-  -d '{"decision":"approved","rationale":"Reviewed by operator"}'
-```
-
-```json
-{
-  "id": "9d24fc4e-6a97-49e0-84d5-3d0c2f426c50",
-  "task_id": "4bf22d77-3815-4e7f-9af2-763ec0286b75",
-  "task_step_id": "89cddbc1-0c46-41bf-9322-0a1264f5f850",
-  "risk_level": "high",
-  "risk_reason": "tool call touched a guarded capability",
-  "action_summary": "Allow sqlite_query.query_database against the synthetic fixture",
-  "requested_at": "2026-04-20T16:02:00Z",
-  "decided_at": "2026-04-20T16:03:12Z",
-  "decided_by": "operator",
-  "decision": "approved",
-  "rationale": "Reviewed by operator"
-}
-```
-
-### 5. Verify audit integrity
-
-```bash
-curl http://localhost:8015/api/v1/audit/integrity \
-  -H "X-API-Key: dev-key"
-```
-
-```json
-{
-  "verified": true,
-  "events_checked": 128,
-  "first_broken_sequence": null,
-  "expected_chain_hash": null,
-  "actual_chain_hash": null
-}
-```
-
-### 6. Stream a task over SSE
-
-The task stream is consumed by both the UI and CLI:
+### 3. Watch v2 SSE events
 
 ```text
-event: plan
-data: {"steps":[{"step_id":"step-1","type":"tool_call","description":"Search the corpus","server":"file_search","tool":"search_documents","args":{"query":"transformer"}}]}
+event: agent_handoff
+data: {"from":"orchestrator","to":"researcher","reason":"Need corpus evidence"}
 
-event: step
-data: {"ordinal":1,"status":"completed","description":"Search the corpus"}
+event: skill_invoked
+data: {"skill_id":"corporate_research","version":"1.0.0","status":"completed"}
 
-event: task_completed
-data: {"final_response":"Transformers replace recurrence with attention..."}
+event: review_verdict
+data: {"reviewer_role":"security_officer","verdict":"approved","rationale":"Plan is bounded and read-only"}
+
+event: cost_update
+data: {"model":"openrouter/free","usd_cost":0.0,"prompt_tokens":590,"completion_tokens":220}
+
+event: confidence_update
+data: {"value":0.86,"heuristic_value":0.9,"self_reported_value":0.8}
+```
+
+### 4. Replay an interrupted task
+
+```bash
+curl -X POST http://localhost:8015/api/v1/tasks/4bf22d77-3815-4e7f-9af2-763ec0286b75/replay \
+  -H "X-API-Key: dev-key"
+```
+
+```json
+{
+  "task_id": "4bf22d77-3815-4e7f-9af2-763ec0286b75",
+  "status": "accepted",
+  "skipped_steps": 3,
+  "message": "Replay accepted; completed idempotent steps will be reused."
+}
+```
+
+### 5. Create a generic webhook trigger
+
+```bash
+curl -X POST http://localhost:8015/api/v1/triggers \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: dev-key" \
+  -d '{
+    "name": "Nightly audit summary",
+    "source": "generic",
+    "kind": "webhook",
+    "enabled": true,
+    "prompt_template": "Summarize event {{event_type}} for {{repository}} and identify security review points.",
+    "config": {"secret": "local-dev-secret"}
+  }'
+```
+
+### 6. Inspect task confidence
+
+```bash
+curl http://localhost:8015/api/v1/observability/tasks/4bf22d77-3815-4e7f-9af2-763ec0286b75/confidence \
+  -H "X-API-Key: dev-key"
+```
+
+```json
+{
+  "task_id": "4bf22d77-3815-4e7f-9af2-763ec0286b75",
+  "latest": {
+    "score": 0.86,
+    "heuristic_value": 0.9,
+    "self_reported_value": 0.8,
+    "threshold": 0.8,
+    "approval_required": false
+  }
+}
 ```
 
 ---
@@ -650,7 +633,7 @@ data: {"final_response":"Transformers replace recurrence with attention..."}
 
 ### CLI
 
-The standalone CLI supports the core operator flow:
+The Streamlit companion CLI in `apps/cli` supports the core operator flow:
 
 - `agentforge session new`
 - `agentforge task run "<prompt>"`
@@ -658,48 +641,28 @@ The standalone CLI supports the core operator flow:
 - `agentforge approval approve <approval_id>`
 - `agentforge audit verify`
 
-The CLI also includes SSE parsing logic so operators can watch task execution as a stream instead of polling.
+The API package also exposes maintenance commands:
+
+- `agentforge seed-synthetic`
+- `agentforge ingest-corpus`
+- `agentforge task-replay <task_id>`
+- `agentforge redteam-run`
+- `agentforge redteam-run --suite v2`
 
 ### Streamlit UI
 
-The Streamlit app acts as an operator console for:
+The Streamlit app is organized around operational work rather than marketing screens.
 
-- session/task creation
-- approval review
-- audit inspection
-- general control-plane visibility
+| Page | Purpose |
+| --- | --- |
+| Home | Readiness snapshot and recent session visibility |
+| Run Agent | Submit tasks, stream events, inspect final responses |
+| Approvals | Review and resolve human approval gates |
+| Audit Log | Browse audit events and verify integrity |
+| Red Team | Run and inspect safety evaluations |
+| AgentOps | View cost trends, confidence gauge, and agent handoff sankey |
 
-The current Streamlit surface is organized into one home view plus four dedicated pages:
-
-- `app.py`
-  - readiness snapshot
-  - recent sessions table
-  - navigation guidance
-- `pages/1_Run_Agent.py`
-  - submit prompts
-  - stream task events
-  - inspect final responses
-- `pages/2_Approvals.py`
-  - list pending approvals
-  - approve or reject risky actions
-- `pages/3_Audit_Log.py`
-  - browse audit events
-  - inspect integrity results
-- `pages/4_Red_Team.py`
-  - trigger red-team runs
-  - inspect run summaries and results
-
-### API-first operation
-
-Everything the UI and CLI do ultimately maps back to the HTTP API, so the system remains automatable for external tools or future frontends.
-
----
-
-## UI Walkthrough
-
-This repository does not currently ship screenshot assets in Git, so this section serves as a grounded walkthrough of the real UI surface instead of a mock marketing gallery.
-
-### Navigation map
+### UI navigation map
 
 ```mermaid
 flowchart LR
@@ -708,125 +671,48 @@ flowchart LR
     Approvals[Approvals]
     Audit[Audit Log]
     Redteam[Red Team]
+    AgentOps[AgentOps]
 
     Home --> Run
     Home --> Approvals
     Home --> Audit
     Home --> Redteam
+    Home --> AgentOps
 ```
 
-### Home page
-
-The home page acts as the operator dashboard:
-
-- control-plane title and framing
-- readiness JSON panel
-- recent sessions table
-- sidebar hints for the main workflows
-
-Conceptually it looks like this:
-
-```text
-+---------------------------------------------------------------+
-| AgentForge Control Plane                                      |
-| Operator view for health, sessions, approvals, audit, safety  |
-+-----------------------------+---------------------------------+
-| Readiness                   | Recent Sessions                 |
-| { status, database, mcp }   | session_id | status | tasks...  |
-|                             | ...                             |
-+-----------------------------+---------------------------------+
-| Sidebar pages: Run Agent | Approvals | Audit Log | Red Team   |
-+---------------------------------------------------------------+
-```
-
-### Run Agent page
-
-This is the main operational page for daily usage:
-
-- create a new task
-- reuse an existing session when needed
-- watch live SSE events
-- inspect the final response
-
-It is effectively the human-facing window into the orchestrator, task event bus, and tool execution lifecycle.
-
-### Approvals page
-
-This page is the human checkpoint:
-
-- review pending approvals
-- inspect risk level and action summary
-- approve or reject the blocked action
-
-It maps directly to the approval service and task resume flow.
-
-### Audit Log page
-
-This page exposes the governance story:
-
-- list audit events
-- inspect event payloads and hash-chain state
-- verify integrity from the UI
-
-### Red Team page
-
-This page is the safety operations surface:
-
-- trigger a red-team run
-- inspect run metadata
-- review scenario outcomes and safety posture
-
-### Why the UI matters
-
-The UI is not just a cosmetic layer. Each page corresponds to a concrete subsystem:
-
-- `Run Agent` -> task intake, streaming, orchestration
-- `Approvals` -> human-in-the-loop control
-- `Audit Log` -> integrity and compliance visibility
-- `Red Team` -> safety evaluation and release confidence
+The UI does not own a separate business logic layer. It calls the same HTTP API used by the CLI and external clients.
 
 ---
 
 ## Evaluation and Verification
 
-This repository has already been brought through a full phase-by-phase implementation and release pass. The current project state includes:
+The v2 branch was implemented phase by phase and verified locally with the Docker waiver noted below.
 
-- 25 API route handlers
-- 4 MCP sidecar services
-- 50 persisted red-team scenarios
-- 53 synthetic corpus documents plus a corpus README
-- 62 test functions across API, sidecar, and UI import coverage
+| Verification area | Expected coverage |
+| --- | --- |
+| v1 regression suite | Existing API, guardrails, approvals, audit, MCP, redteam, UI import coverage |
+| v2 API suite | supervisor graph, self-healing, replay, skills, reviews, triggers, observability |
+| Trigger worker | worker health, API client behavior, schedule fire path |
+| Redteam v1 | original safety scenarios with high threshold |
+| Redteam v2 | 20 additional scenarios across multi-agent categories |
+| CI | `test-v2`, trigger worker build, sidecar build checks, split redteam jobs |
 
-### Important verified outcomes
+Local branch closure evidence from the v2 release pass:
 
-- audit chain integrity verification works
-- prompt injection and unsafe requests can be blocked before execution
-- risky tool calls can pause for approval and resume later
-- SSE task streaming works across both UI and CLI parsers
-- MCP sidecar metadata and readiness are surfaced through the API
-- the GitHub Actions `ci` workflow and scheduled `redteam` workflow are wired as release gates
+- `uv run --directory apps/api pytest -q` -> `96 passed`
+- `uv run --directory apps/trigger_worker pytest -q` -> `2 passed`
+- AgentOps Streamlit import smoke passed
+- Alembic upgraded through v2 head
 
-### CI/CD status
+The v2 red-team suite covers these added categories:
 
-GitHub Actions provides two main automation lanes:
-
-- `ci.yml`
-  - lint
-  - API tests
-  - MCP sidecar tests
-  - image build checks
-  - delegated redteam workflow call
-- `redteam.yml`
-  - environment sync
-  - spaCy model install
-  - optional live OpenRouter-backed redteam gate
-  - deterministic pytest safety suite
-  - report artifact upload
-
-The redteam workflow is intentionally adaptive:
-
-- if `OPENROUTER_API_KEY` exists in repository secrets, the live `agentforge redteam-run` gate executes
-- if it does not exist, the deterministic pytest safety suite still runs so the safety workflow remains usable in public CI
+- multi-agent handoff abuse
+- Security Officer bypass
+- skill policy bypass
+- trigger spoofing
+- confidence attack
+- tool abuse
+- goal hijack
 
 ---
 
@@ -838,19 +724,31 @@ The redteam workflow is intentionally adaptive:
 copy .env.example .env
 ```
 
-Fill in at least:
+Fill in local-only values:
 
 ```env
+API_KEY=dev-key
 OPENROUTER_API_KEY=your_key_here
 OPENROUTER_MODEL=openrouter/free
 GITHUB_TOKEN=your_scoped_token_here
-TRIGGER_WORKER_INTERNAL_API_KEY=dev-key-change-me
+GENERIC_WEBHOOK_SECRET=local-dev-secret
+TRIGGER_WORKER_INTERNAL_API_KEY=dev-key
+CONFIDENCE_GATE_THRESHOLD=0.80
+OPENAI_PRICES_PATH=fixtures/pricing/openrouter_prices.yml
 ```
 
-### 2. Sync the API environment
+### 2. Sync the workspace
 
 ```powershell
 uv sync --directory apps/api
+uv sync --directory apps/cli
+uv sync --directory apps/ui
+uv sync --directory apps/trigger_worker
+```
+
+Install the spaCy model used by the guardrail suites:
+
+```powershell
 uv pip install --python .venv\Scripts\python.exe https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1-py3-none-any.whl
 ```
 
@@ -860,7 +758,7 @@ uv pip install --python .venv\Scripts\python.exe https://github.com/explosion/sp
 uv run --directory apps/api alembic upgrade head
 ```
 
-### 4. Generate and ingest local knowledge fixtures
+### 4. Generate and ingest local fixtures
 
 ```powershell
 uv run --directory apps/api python -m agentforge.tools.generate_corpus
@@ -868,63 +766,41 @@ uv run --directory apps/api agentforge seed-synthetic --output fixtures/syntheti
 uv run --directory apps/api agentforge ingest-corpus
 ```
 
-### 5. Run the test suite
+### 5. Run verification
 
 ```powershell
-uv run --directory apps/api pytest tests -q
-uv run --directory apps/api pytest tests/safety/test_redteam_suite.py -q
-uv run --directory apps/api pytest tests/safety/test_redteam_v2.py -q
+uv run --directory apps/api pytest -q
+uv run --directory apps/trigger_worker pytest -q
+uv run --directory apps/api pytest tests/safety/test_redteam_suite.py tests/safety/test_redteam_v2.py -q
 ```
 
-### 6. Run the API
+### 6. Start the API
 
 ```powershell
 uv run --directory apps/api uvicorn agentforge.main:app --app-dir src --host 0.0.0.0 --port 8015
 ```
 
-### 7. Use the CLI
-
-```powershell
-uv run --directory apps/cli agentforge session new
-uv run --directory apps/cli agentforge task run "Find transformer content and summarize it."
-uv run --directory apps/cli agentforge approval list
-uv run --directory apps/cli agentforge audit verify
-```
-
-### 8. Run the trigger worker
+### 7. Start the trigger worker
 
 ```powershell
 uv run --directory apps/trigger_worker uvicorn trigger_worker.server:app --app-dir src --host 0.0.0.0 --port 8105
 ```
 
-### 9. Run the red-team CLI manually
+### 8. Start the UI
 
 ```powershell
-uv run --directory apps/api agentforge redteam-run
-uv run --directory apps/api agentforge redteam-run --suite v2
+uv run --directory apps/ui streamlit run src/agentforge_ui/app.py
 ```
 
----
+### 9. Use the CLI
 
-## V2 Quickstart
-
-If you want to exercise the multi-agent branch specifically, this is the shortest high-signal path:
-
-1. Apply the v2 database head.
-   `uv run --directory apps/api alembic upgrade head`
-2. Start the API and trigger worker in two terminals.
-   `uv run --directory apps/api uvicorn agentforge.main:app --app-dir src --host 0.0.0.0 --port 8000`
-   `uv run --directory apps/trigger_worker uvicorn trigger_worker.server:app --app-dir src --host 0.0.0.0 --port 8105`
-3. Start the Streamlit UI.
-   `uv run --directory apps/ui streamlit run src/agentforge_ui/Home.py`
-4. Create a task that requires planning and synthesis.
-   Example: `Summarize the latest relevant corpus guidance, propose an implementation plan, and identify any security review points.`
-5. Watch the task stream or the AgentOps page.
-   You should see handoffs, retries when applicable, review decisions, cost updates, and confidence scoring.
-6. Exercise replay.
-   `uv run --directory apps/api agentforge task-replay <task-id>`
-7. Exercise both safety gates before calling the branch release-ready.
-   `uv run --directory apps/api pytest tests/safety/test_redteam_suite.py tests/safety/test_redteam_v2.py -v`
+```powershell
+uv run --directory apps/cli agentforge session new
+uv run --directory apps/cli agentforge task run "Research corpus guidance, inspect repo context, and summarize the security review points."
+uv run --directory apps/cli agentforge approval list
+uv run --directory apps/cli agentforge audit verify
+uv run --directory apps/api agentforge task-replay <task_id>
+```
 
 ---
 
@@ -934,18 +810,27 @@ If you want to exercise the multi-agent branch specifically, this is the shortes
 apps/
   api/
     alembic/
+      versions/
+        007_multi_agent.py
+        008_skills.py
+        009_reviews.py
+        010_triggers.py
+        011_observability.py
     src/agentforge/
+      agents/
       guardrails/
       models/
       routers/
       schemas/
       services/
+      skills/
       tools/
     tests/
   cli/
     src/agentforge_cli/
   trigger_worker/
     src/trigger_worker/
+    tests/
   ui/
     src/agentforge_ui/
     tests/
@@ -956,6 +841,7 @@ apps/
     github/
 fixtures/
   corpus/
+  pricing/
 ops/
   docker/
   github/
@@ -966,9 +852,7 @@ pyproject.toml
 uv.lock
 ```
 
-### Workspace layout
-
-The root `uv` workspace includes:
+### Workspace packages
 
 - `agentforge-api`
 - `agentforge-cli`
@@ -983,47 +867,33 @@ The root `uv` workspace includes:
 
 ## Deployment Notes
 
-The repo includes a full Compose layout for the intended release path:
-
-- `ops/docker/compose.full.yml`
-- `ops/docker/compose.sidecars.yml`
-- `docker-compose.yml`
-
-The intended full stack includes:
-
-- API
-- database
-- all four MCP sidecars
-- Streamlit UI
-
-### Deployment modes
+The repository includes compose definitions for the intended full stack, even though local Docker verification was waived on the maintainer workstation.
 
 | Mode | Components | Best for | Notes |
 | --- | --- | --- | --- |
-| Local API-only | API + local SQLite/checkpoints + optional locally spawned MCP processes | Fast iteration on routers, schemas, and orchestration logic | Lowest friction on constrained Windows machines |
-| Local host full-stack | API, local DB, sidecars, UI, CLI, corpus fixtures | End-to-end operator testing without containers | Sensitive to local security software and port/process interference |
-| Docker Compose | `docker-compose.yml` or `ops/docker/compose.full.yml` with DB, API, MCP sidecars, UI | Repeatable full-stack runs and release-like verification | Preferred when Docker Desktop is healthy |
-| GitHub Actions CI | Lint, API tests, MCP test matrix, image builds, redteam gate | Release truth and regression prevention | Current green CI status is the strongest verification source for this repo |
-| Hardened production | Managed secrets, managed Postgres, TLS termination, observability, protected branches | Real operator deployment | Requires stronger auth, backups, alerting, and environment-specific secret handling |
+| API-only local | API, local SQLite/checkpoints, optional local sidecars | Router, schema, and orchestration development | Lowest friction on Windows |
+| Host full-stack | API, MCP sidecars, trigger worker, UI, CLI | End-to-end operator testing without containers | Sensitive to security software and local ports |
+| Docker Compose | API, DB, MCP sidecars, trigger worker, UI | Repeatable release-like runs | Preferred when Docker Desktop is healthy |
+| GitHub Actions | lint, tests, sidecar builds, worker build, redteam | Release confidence and regression prevention | Avoids local Docker/antivirus instability |
+| Hardened production | managed DB, secret manager, TLS, stronger auth, observability | Real operator deployment | Requires environment-specific hardening beyond local dev defaults |
 
-For production hardening, the important next-layer concerns are:
+Production hardening should include:
 
-- proper secret management
-- stronger auth than shared API keys
+- managed PostgreSQL with backups
+- secrets outside `.env`
 - TLS termination
-- managed PostgreSQL and backups
-- centralized observability and alerting
-- protected branches with CI and redteam gating
+- stronger auth than shared API keys
+- protected branches with required CI and redteam checks
+- centralized logs, metrics, and alerting
+- token rotation for GitHub and OpenRouter credentials
 
 ---
 
 ## Known Local Waivers
 
-This repository should be read with one workstation-specific caveat:
+Docker verification was explicitly waived on the maintainer's Windows workstation because Docker Desktop and Bitdefender interfered with container execution. The compose files are still part of the shipped architecture; the waiver applies only to local verification on that machine.
 
-- Docker verification was explicitly waived on the maintainer's Windows host because Docker Desktop and Bitdefender were interfering with container execution.
-
-That waiver applied only to local host verification. GitHub Actions CI remained the release truth source for the repository.
+Local host-side verification and GitHub Actions are the preferred evidence sources for this branch.
 
 ---
 
@@ -1035,5 +905,6 @@ That waiver applied only to local host verification. GitHub Actions CI remained 
 - [NVIDIA NeMo Guardrails](https://github.com/NVIDIA/NeMo-Guardrails)
 - [Streamlit](https://streamlit.io/)
 - [OpenRouter](https://openrouter.ai/)
+- [APScheduler](https://apscheduler.readthedocs.io/)
 - [GitHub Actions](https://docs.github.com/actions)
 - [License](LICENSE)
